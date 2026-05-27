@@ -88,6 +88,43 @@ const customerSchema = new mongoose.Schema(
       pushNotifications: { type: Boolean, default: true },
       preferredLanguage: { type: String, default: 'en' },
     },
+    purifierDetails: {
+      modelName: {
+        type: String,
+        default: 'FilterNest Premium Classic',
+      },
+      serialNumber: {
+        type: String,
+        default: 'FN-RO-8829-X',
+      },
+      installationDate: {
+        type: Date,
+        default: Date.now,
+      },
+      waterHealthScore: {
+        type: Number,
+        default: 98,
+      },
+      filterHealthScore: {
+        type: Number,
+        default: 94,
+      },
+    },
+    membershipStatus: {
+      type: String,
+      enum: ['standard', 'premium', 'gold', 'platinum'],
+      default: 'premium',
+    },
+    preferredServiceTimings: {
+      day: {
+        type: String,
+        default: 'Anyday',
+      },
+      timeSlot: {
+        type: String,
+        default: '10:00 AM - 01:00 PM',
+      },
+    },
   },
   { timestamps: true }
 );

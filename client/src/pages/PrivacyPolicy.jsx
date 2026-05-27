@@ -109,7 +109,7 @@ const PrivacyPolicy = () => {
             </div>
 
             <div className="pt-6 border-t border-[#753401]/10 text-xs text-on-surface-variant text-center">
-              <p>If you have any questions regarding this Privacy Policy, please contact our Legal Office at legal@filternest.com.</p>
+              <p>If you have any questions regarding this Privacy Policy, please contact our Legal Office at filternest.service@gmail.com.</p>
             </div>
           </div>
         </motion.div>

@@ -18,12 +18,23 @@ html {
 
 body {
   font-family: 'Montserrat', sans-serif;
-  background: linear-gradient(135deg, #f5eff5 0%, #e2e8f7 100%);
-  background-attachment: fixed;
+  background: linear-gradient(135deg, #faf9f6 0%, #f4f3f1 60%, #dac2b6 100%) !important;
+  background-attachment: fixed !important;
   color: #1a1c1a;
   min-height: 100vh;
   overflow-x: hidden;
 }
+
+/* Allow fixed gradient to show through root page wrappers cleanly without obscuring it */
+#root > div.min-h-screen,
+#root > div.bg-background,
+#root > div.bg-gray-50,
+#root > div[class*="bg-[#faf9f6]"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
 
 
 
@@ -53,6 +64,13 @@ body {
 /* Gradient classes */
 .gradient-primary {
   background: linear-gradient(135deg, #6c2f00 0%, #8b4513 100%);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #6c2f00 0%, #8b4513 100%);
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
 }
 
 .gradient-success {

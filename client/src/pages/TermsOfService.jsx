@@ -94,7 +94,7 @@ const TermsOfService = () => {
             </div>
 
             <div className="pt-6 border-t border-[#753401]/10 text-xs text-on-surface-variant text-center">
-              <p>If you have questions regarding these terms, please contact our Compliance Office at support@filternest.com.</p>
+              <p>If you have questions regarding these terms, please contact our Compliance Office at filternest.service@gmail.com.</p>
             </div>
           </div>
         </motion.div>

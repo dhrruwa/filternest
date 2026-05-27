@@ -33,6 +33,25 @@ export const customerService = {
   updateProfile: (data) => api.put('/customers/profile', data),
   updateLocation: (latitude, longitude) =>
     api.put('/customers/location', { latitude, longitude }),
+  getDashboard: () => api.get('/customers/dashboard'),
+  getBookings: (params) => api.get('/customers/bookings', { params }),
+  getInvoices: () => api.get('/customers/invoices'),
+  getInvoicePdfUrl: (id) => {
+    const token = localStorage.getItem('token');
+    const base = api.defaults.baseURL || '/api';
+    return `${base}/customers/invoices/${id}/pdf${token ? `?token=${token}` : ''}`;
+  },
+  getPayments: () => api.get('/customers/payments'),
+  simulateCheckout: (invoiceId, method) => api.post('/customers/payments/simulate', { invoiceId, method }),
+  getNotifications: () => api.get('/customers/notifications'),
+  markNotificationRead: (id) => api.put(`/customers/notifications/${id}/read`),
+  deleteNotification: (id) => api.delete(`/customers/notifications/${id}`),
+  getSupportTickets: () => api.get('/customers/support/tickets'),
+  createSupportTicket: (data) => api.post('/customers/support/tickets', data),
+  addSupportTicketMessage: (id, text) => api.post(`/customers/support/tickets/${id}/messages`, { text }),
+  getReminders: () => api.get('/customers/reminders'),
+  snoozeReminder: (id) => api.put(`/customers/reminders/${id}/snooze`),
+  rescheduleReminder: (id, customDate) => api.put(`/customers/reminders/${id}/reschedule`, { customDate }),
 };
 
 // Booking services

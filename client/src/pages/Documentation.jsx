@@ -125,7 +125,7 @@ const Documentation = () => {
             </div>
 
             <div className="pt-6 border-t border-[#753401]/10 text-xs text-on-surface-variant text-center">
-              <p>For custom CAD schematics or architectural cabinetry fit dimensions, contact engineering@filternest.com.</p>
+              <p>For custom CAD schematics or architectural cabinetry fit dimensions, contact filternest.service@gmail.com.</p>
             </div>
           </div>
         </motion.div>

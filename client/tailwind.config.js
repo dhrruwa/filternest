@@ -71,6 +71,8 @@ module.exports = {
         "max-width": "1440px",
       },
       fontFamily: {
+        sans: ["Montserrat", "sans-serif"],
+        serif: ["Playfair Display", "serif"],
         "headline-md": ["Playfair Display", "serif"],
         "label-md": ["Montserrat", "sans-serif"],
         "headline-lg-mobile": ["Playfair Display", "serif"],

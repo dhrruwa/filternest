@@ -147,7 +147,7 @@ const Home = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="font-headline-xl text-headline-xl text-[#6c2f00] font-bold leading-[1.15] mb-6"
+              className="font-headline-xl text-headline-xl text-gradient font-bold leading-[1.15] mb-6"
             >
               Pure Water.<br />
               Pure Living.
@@ -190,7 +190,7 @@ const Home = () => {
       <section className="py-24 px-margin-mobile md:px-margin-desktop max-w-max-width mx-auto">
         <div className="text-center mb-16">
           <span className="text-label-sm font-label-sm text-secondary uppercase tracking-widest block mb-3">OUR STANDARDS</span>
-          <h2 className="text-headline-lg text-headline-lg font-bold text-primary mb-4">Meticulous Care</h2>
+          <h2 className="text-headline-lg text-headline-lg font-bold text-primary text-gradient mb-4">Meticulous Care</h2>
           <p className="text-on-surface-variant max-w-xl mx-auto text-body-md font-body-md">
             Delivering absolute precision water engineering backed by our high-end service standards and elite specialist technicians.
           </p>
@@ -229,7 +229,7 @@ const Home = () => {
         <div className="max-w-max-width mx-auto">
           <div className="text-center mb-16">
             <span className="text-label-sm font-label-sm text-secondary uppercase tracking-widest block mb-3">CURATED RANGE</span>
-            <h2 className="text-headline-lg text-headline-lg font-bold text-primary mb-4">Signature Systems</h2>
+            <h2 className="text-headline-lg text-headline-lg font-bold text-primary text-gradient mb-4">Signature Systems</h2>
             <p className="text-on-surface-variant max-w-xl mx-auto text-body-md font-body-md">
               Discover our premier line-up of home reverse osmosis and high-density purification water systems.
             </p>
@@ -348,7 +348,7 @@ const Home = () => {
         <div className="max-w-max-width mx-auto">
           <div className="text-center mb-16">
             <span className="text-label-sm font-label-sm text-secondary uppercase tracking-widest block mb-3">TRUSTED NATIONWIDE</span>
-            <h2 className="text-headline-lg text-headline-lg font-bold text-primary mb-4">Sanctuary Reviews Board</h2>
+            <h2 className="text-headline-lg text-headline-lg font-bold text-primary text-gradient mb-4">Sanctuary Reviews Board</h2>
             <p className="text-on-surface-variant max-w-xl mx-auto text-body-md font-body-md">
               Real, verified feedback from customer properties experiencing spa-level water purification.
             </p>

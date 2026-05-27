@@ -569,15 +569,15 @@ const Login = () => {
                       <div className="space-y-2 mb-6 max-h-[220px] overflow-y-auto pr-1">
                         {/* Account 1: Dhruva */}
                         <button
-                          onClick={() => handleGoogleAccountSelect('dhrruwa@gmail.com')}
+                          onClick={() => handleGoogleAccountSelect('filternest.service@gmail.com')}
                           className="w-full p-3.5 rounded-xl border border-slate-200/80 hover:bg-slate-50 transition-all flex items-center gap-3 text-left focus:outline-none"
                         >
                           <div className="w-8 h-8 rounded-full bg-gradient-primary text-white flex items-center justify-center font-bold text-sm">
                             D
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-slate-800 truncate leading-tight">Dhruva</p>
-                            <p className="text-[10px] text-slate-500 truncate leading-none mt-1">dhrruwa@gmail.com</p>
+                            <p className="text-xs font-bold text-slate-800 truncate leading-tight">Dhruva (FilterNest)</p>
+                            <p className="text-[10px] text-slate-500 truncate leading-none mt-1">filternest.service@gmail.com</p>
                           </div>
                           <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 border border-emerald-100 rounded uppercase tracking-wider shrink-0">
                             Active

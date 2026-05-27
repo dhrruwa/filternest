@@ -1,6 +1,7 @@
 const Booking = require('../models/Booking');
 const Customer = require('../models/Customer');
 const Agent = require('../models/Agent');
+const Invoice = require('../models/Invoice');
 const { v4: uuidv4 } = require('uuid');
 const { createNotification, sendNotification } = require('../services/notificationService');
 const { createMaintenanceSchedules } = require('../services/schedulerService');
@@ -131,6 +132,45 @@ const updateBookingStatus = async (req, res) => {
       booking.completedAt = new Date();
       // Create maintenance schedules
       await createMaintenanceSchedules(booking._id);
+
+      // Check if an invoice is already registered for this booking
+      let invoice = await Invoice.findOne({ booking: booking._id });
+      if (!invoice) {
+        const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+        const cost = booking.cost || {
+          serviceFee: 200,
+          partsCost: 0,
+          tax: 36,
+          totalCost: 236,
+        };
+
+        invoice = await Invoice.create({
+          invoiceNumber,
+          booking: booking._id,
+          customer: booking.customer,
+          agent: booking.assignedAgent || null,
+          issueDate: new Date(),
+          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days net
+          items: [
+            {
+              description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
+              quantity: 1,
+              unitPrice: cost.serviceFee || 200,
+              total: cost.serviceFee || 200,
+            }
+          ],
+          subtotal: cost.serviceFee || 200,
+          tax: cost.tax || 36,
+          taxPercentage: 18,
+          total: cost.totalCost || 236,
+          paymentStatus: booking.paymentStatus || 'pending',
+          paymentMethod: booking.paymentMethod || undefined,
+          paymentDate: booking.paymentStatus === 'completed' ? new Date() : undefined,
+        });
+
+        // Link the invoice to the booking
+        booking.invoice = invoice._id;
+      }
     }
 
     await booking.save();
