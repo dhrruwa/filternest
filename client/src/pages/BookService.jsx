@@ -145,12 +145,30 @@ const BookService = () => {
     };
     fetchDefaultAddress();
 
-    // Auto-select service from Book Now button
-    if (location.state?.selectedService) {
-      setFormData((prev) => ({
-        ...prev,
-        serviceType: services.find((service) => service.name === location.state.selectedService || service.value === location.state.selectedService)?.value || location.state.selectedService,
-      }));
+    // Auto-select service from Book Now button (handling state passed from other pages flexibly)
+    const incomingService = location.state?.selectedService || location.state?.serviceTitle;
+    if (incomingService) {
+      const normalized = incomingService.toLowerCase().trim();
+      let matchedValue = '';
+
+      if (normalized.includes('general')) {
+        matchedValue = 'general_service';
+      } else if (normalized.includes('pre-filter') || normalized.includes('prefilter')) {
+        matchedValue = 'prefilter_replacement';
+      } else if (normalized.includes('membrane') || normalized.includes('calibration')) {
+        matchedValue = 'membrane_replacement';
+      } else if (normalized.includes('installation')) {
+        matchedValue = 'installation';
+      } else if (normalized.includes('repair') || normalized.includes('breakdown')) {
+        matchedValue = 'repair';
+      }
+
+      if (matchedValue) {
+        setFormData((prev) => ({
+          ...prev,
+          serviceType: matchedValue,
+        }));
+      }
     }
   }, [user, navigate, location.state]);
 

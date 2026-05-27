@@ -278,6 +278,7 @@ const Home = () => {
                   </div>
                   <Link
                     to="/book-service"
+                    state={{ serviceTitle: service.name }}
                     className="block text-center w-full px-6 py-3.5 bg-primary text-on-primary rounded-xl font-label-md text-label-md hover:opacity-90 active:scale-98 transition-all shadow-md"
                   >
                     Schedule Service
