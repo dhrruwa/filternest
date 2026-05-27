@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html class="scroll-smooth" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Book Your Service | PureFlow</title>
+<!-- Typography -->
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&amp;family=Playfair+Display:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "surface-container-lowest": "#ffffff",
+        "on-primary-fixed": "#321200",
+        "on-tertiary-fixed-variant": "#474836",
+        "on-surface": "#1a1c1a",
+        "surface-variant": "#e3e2e0",
+        "on-tertiary": "#ffffff",
+        "on-background": "#1a1c1a",
+        "error": "#ba1a1a",
+        "inverse-on-surface": "#f2f1ee",
+        "primary-fixed-dim": "#ffb68c",
+        "surface-container": "#efeeeb",
+        "surface-dim": "#dbdad7",
+        "inverse-surface": "#2f312f",
+        "on-primary-container": "#ffc29f",
+        "on-tertiary-container": "#d1d1b9",
+        "tertiary-container": "#585a47",
+        "on-secondary-container": "#706439",
+        "surface-bright": "#faf9f6",
+        "tertiary": "#414231",
+        "outline": "#877369",
+        "primary": "#6c2f00",
+        "secondary-container": "#f3e2ac",
+        "on-tertiary-fixed": "#1b1d0e",
+        "surface": "#faf9f6",
+        "outline-variant": "#dac2b6",
+        "surface-tint": "#934b19",
+        "on-error": "#ffffff",
+        "on-error-container": "#93000a",
+        "inverse-primary": "#ffb68c",
+        "secondary-fixed": "#f3e2ac",
+        "surface-container-low": "#f4f3f1",
+        "secondary": "#6a5e33",
+        "on-primary": "#ffffff",
+        "tertiary-fixed-dim": "#c8c8b0",
+        "primary-fixed": "#ffdbc9",
+        "on-primary-fixed-variant": "#753401",
+        "on-secondary": "#ffffff",
+        "secondary-fixed-dim": "#d6c692",
+        "tertiary-fixed": "#e4e4cc",
+        "primary-container": "#8b4513",
+        "on-secondary-fixed": "#231b00",
+        "error-container": "#ffdad6",
+        "surface-container-highest": "#e3e2e0",
+        "on-secondary-fixed-variant": "#51461e",
+        "surface-container-high": "#e9e8e5",
+        "on-surface-variant": "#54433a",
+        "background": "#faf9f6"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.25rem",
+        "lg": "0.5rem",
+        "xl": "0.75rem",
+        "full": "9999px"
+      },
+      "spacing": {
+        "margin-mobile": "20px",
+        "margin-desktop": "64px",
+        "gutter": "24px",
+        "unit": "8px",
+        "max-width": "1440px"
+      },
+      "fontFamily": {
+        "headline-md": ["Playfair Display"],
+        "label-md": ["Montserrat"],
+        "body-md": ["Montserrat"],
+        "label-sm": ["Montserrat"],
+        "headline-lg": ["Playfair Display"],
+        "headline-xl": ["Playfair Display"],
+        "body-lg": ["Montserrat"]
+      },
+      "fontSize": {
+        "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+        "label-md": ["14px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+        "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+        "label-sm": ["12px", {"lineHeight": "1", "fontWeight": "500"}],
+        "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "600"}],
+        "headline-xl": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}]
+      }
+    }
+  }
+}
+</script>
+<style>
+.glass-card {
+  background: rgba(255, 253, 208, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(194, 178, 128, 0.3);
+  box-shadow: 0 20px 40px -15px rgba(139, 69, 19, 0.08);
+}
+.input-underline {
+  border: none;
+  border-bottom: 1px solid #dac2b6;
+  background: transparent;
+  transition: border-color 0.3s ease;
+}
+.input-underline:focus {
+  outline: none;
+  border-bottom: 2px solid #6c2f00;
+  box-shadow: none;
+}
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+</style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 w-full sticky top-0 z-50 bg-surface/80 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(139,69,19,0.08)]">
+<div class="text-headline-md font-headline-md font-bold tracking-tight text-primary">PureFlow Service</div>
+<nav class="hidden md:flex gap-8 items-center">
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md" href="index.html">Services</a>
+<a class="text-primary border-b-2 border-primary pb-1 font-label-md text-label-md" href="#">Booking</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md" href="#">Support</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="hidden md:block text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md">Sign In</button>
+<button class="bg-primary text-on-primary px-6 py-2.5 rounded-full font-label-md text-label-md hover:opacity-90 transition-opacity active:scale-95">Get Started</button>
+</div>
+</header>
+<main class="max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-12 md:py-20 flex flex-col items-center">
+<!-- Hero Section -->
+<div class="text-center mb-16 max-w-2xl">
+<span class="text-label-md font-label-md uppercase tracking-widest text-secondary mb-4 block">Schedule Excellence</span>
+<h1 class="text-headline-xl font-headline-xl mb-6">Pure Water, <br/>Pure Peace of Mind.</h1>
+<p class="text-body-lg font-body-lg text-on-surface-variant">Our master technicians ensure your hydration system operates at peak performance. Book your luxury maintenance experience below.</p>
+</div>
+<!-- Booking Form Card -->
+<div class="glass-card w-full max-w-3xl rounded-[32px] p-8 md:p-12 relative overflow-hidden">
+<div class="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+<div class="absolute -bottom-24 -left-24 w-64 h-64 bg-secondary/10 rounded-full blur-3xl"></div>
+<form class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 relative z-10" onsubmit="event.preventDefault(); showConfirmation();">
+<div class="flex flex-col gap-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Full Name</label>
+<input class="input-underline py-2 text-body-md font-body-md" placeholder="Alexander Sterling" required type="text"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Phone Number</label>
+<input class="input-underline py-2 text-body-md font-body-md" placeholder="+1 (555) 000-0000" required type="tel"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Email Address</label>
+<input class="input-underline py-2 text-body-md font-body-md" placeholder="alex@residence.com" required type="email"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Service Area Pincode</label>
+<div class="flex items-center gap-2 border-b border-outline-variant/50 focus-within:border-primary transition-colors">
+<input class="flex-grow border-none focus:ring-0 bg-transparent py-2 text-body-md font-body-md" placeholder="90210" required type="text"/>
+<button class="group flex items-center gap-1 text-primary text-label-sm font-label-sm hover:opacity-80 transition-opacity" type="button">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+Use Current
+</button>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Filter Brand</label>
+<input class="input-underline py-2 text-body-md font-body-md" placeholder="e.g., PureAqua Pro 500" required type="text"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Service Type</label>
+<select class="input-underline py-2 text-body-md font-body-md bg-transparent appearance-none">
+<option>Scheduled Maintenance</option>
+<option>Emergency Repair</option>
+<option>Filter Replacement</option>
+<option>Water Quality Testing</option>
+</select>
+</div>
+<div class="flex flex-col gap-2 md:col-span-2">
+<label class="text-label-md font-label-md uppercase text-on-surface-variant">Preferred Appointment</label>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<input class="input-underline py-2 text-body-md font-body-md" required type="date"/>
+<input class="input-underline py-2 text-body-md font-body-md" required type="time"/>
+</div>
+</div>
+<div class="md:col-span-2 pt-6">
+<button class="w-full bg-primary text-on-primary font-label-md text-label-md py-4 rounded-xl shadow-lg hover:shadow-xl hover:translate-y-[-2px] active:scale-[0.98] transition-all duration-300" type="submit">
+Confirm Booking Request
+</button>
+<p class="text-center text-label-sm font-label-sm text-on-surface-variant/60 mt-4">A concierge will contact you within 60 minutes to finalize.</p>
+</div>
+</form>
+</div>
+<!-- Decorative Info Bento -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter w-full mt-24">
+<div class="glass-card p-8 rounded-3xl flex flex-col gap-4">
+<span class="material-symbols-outlined text-primary text-[32px]">verified</span>
+<h3 class="text-headline-md font-headline-md">Certified Master Technicians</h3>
+<p class="text-body-md text-on-surface-variant">Only highly vetted specialists handle your luxury filtration units.</p>
+</div>
+<div class="glass-card p-8 rounded-3xl flex flex-col gap-4">
+<span class="material-symbols-outlined text-primary text-[32px]">schedule</span>
+<h3 class="text-headline-md font-headline-md">Punctual & Discreet</h3>
+<p class="text-body-md text-on-surface-variant">We respect your time and space, arriving precisely as scheduled.</p>
+</div>
+<div class="glass-card p-8 rounded-3xl flex flex-col gap-4">
+<span class="material-symbols-outlined text-primary text-[32px]">spa</span>
+<h3 class="text-headline-md font-headline-md">Pure Wellness</h3>
+<p class="text-body-md text-on-surface-variant">Water quality analysis included with every service visit.</p>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-highest py-12 border-t border-outline-variant/10">
+<div class="max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<div>
+<div class="text-headline-md font-headline-md text-primary mb-4">PureFlow</div>
+<p class="text-body-md text-on-surface-variant max-w-sm">© 2024 PureFlow Service. Pure Wellness, Defined. Luxury water management for the modern home.</p>
+</div>
+<div class="flex flex-wrap gap-x-8 gap-y-4 md:justify-end items-center">
+<a class="text-on-surface-variant hover:text-primary transition-colors text-label-sm font-label-sm" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors text-label-sm font-label-sm" href="#">Terms of Service</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors text-label-sm font-label-sm" href="#">FAQ</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors text-label-sm font-label-sm" href="#">Contact Us</a>
+</div>
+</div>
+</footer>
+<!-- Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 lg:hidden bg-surface/90 backdrop-blur-2xl border-t border-outline-variant/20 shadow-[0_-10px_30px_rgba(139,69,19,0.05)] rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant/70" href="index.html">
+<span class="material-symbols-outlined">home</span>
+<span class="text-label-sm font-label-sm mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/70" href="#">
+<span class="material-symbols-outlined">waves</span>
+<span class="text-label-sm font-label-sm mt-1">Tracker</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container/20 text-primary rounded-xl px-4 py-1.5 scale-90" href="#">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="text-label-sm font-label-sm mt-1">Booking</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/70" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="text-label-sm font-label-sm mt-1">Profile</span>
+</a>
+</nav>
+<!-- Confirmation Modal -->
+<div class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-surface-dim/40 backdrop-blur-md hidden opacity-0 transition-opacity duration-500" id="confirmationOverlay">
+<div class="glass-card max-w-md w-full p-10 rounded-[40px] text-center transform scale-95 transition-transform duration-500" id="confirmationCard">
+<div class="w-20 h-20 bg-primary-container text-on-primary-container rounded-full flex items-center justify-center mx-auto mb-6">
+<span class="material-symbols-outlined text-[40px]">check_circle</span>
+</div>
+<h2 class="text-headline-md font-headline-md mb-2">Request Received</h2>
+<p class="text-body-md text-on-surface-variant mb-8">Your booking for a Premium Service visit has been successfully logged. Our team is reviewing the details.</p>
+<button class="w-full border border-outline text-primary font-label-md text-label-md py-3 rounded-full hover:bg-surface-container transition-colors" onclick="hideConfirmation()">
+View My Bookings
+</button>
+</div>
+</div>
+<script>
+function showConfirmation() {
+  const overlay = document.getElementById('confirmationOverlay');
+  const card = document.getElementById('confirmationCard');
+  overlay.classList.remove('hidden');
+  setTimeout(() => {
+    overlay.classList.add('opacity-100');
+    card.classList.remove('scale-95');
+    card.classList.add('scale-100');
+  }, 10);
+}
+
+function hideConfirmation() {
+  const overlay = document.getElementById('confirmationOverlay');
+  const card = document.getElementById('confirmationCard');
+  overlay.classList.remove('opacity-100');
+  card.classList.add('scale-95');
+  setTimeout(() => {
+    overlay.classList.add('hidden');
+  }, 500);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{
+  "name": "water-filter-service",
+  "version": "1.0.0",
+  "description": "Water Filter Service Management System - Full Stack Application",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "cd server && npm install",
+    "build:client": "cd client && npm install && npm run build",
+    "start": "cd server && npm start",
+    "seed": "cd server && node utils/seedServices.js",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install"
+  },
+  "keywords": [
+    "water",
+    "filter",
+    "service",
+    "management",
+    "system"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.1"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "nodemailer": "^8.0.7"
+  }
+}

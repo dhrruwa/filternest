@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PureFlow Service | Pure Water. Pure Living.</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&amp;family=Montserrat:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "surface-container-lowest": "#ffffff",
+        "on-primary-fixed": "#321200",
+        "on-tertiary-fixed-variant": "#474836",
+        "on-surface": "#1a1c1a",
+        "surface-variant": "#e3e2e0",
+        "on-tertiary": "#ffffff",
+        "on-background": "#1a1c1a",
+        "error": "#ba1a1a",
+        "inverse-on-surface": "#f2f1ee",
+        "primary-fixed-dim": "#ffb68c",
+        "surface-container": "#efeeeb",
+        "surface-dim": "#dbdad7",
+        "inverse-surface": "#2f312f",
+        "on-primary-container": "#ffc29f",
+        "on-tertiary-container": "#d1d1b9",
+        "tertiary-container": "#585a47",
+        "on-secondary-container": "#706439",
+        "surface-bright": "#faf9f6",
+        "tertiary": "#414231",
+        "outline": "#877369",
+        "primary": "#6c2f00",
+        "secondary-container": "#f3e2ac",
+        "on-tertiary-fixed": "#1b1d0e",
+        "surface": "#faf9f6",
+        "outline-variant": "#dac2b6",
+        "surface-tint": "#934b19",
+        "on-error": "#ffffff",
+        "on-error-container": "#93000a",
+        "inverse-primary": "#ffb68c",
+        "secondary-fixed": "#f3e2ac",
+        "surface-container-low": "#f4f3f1",
+        "secondary": "#6a5e33",
+        "on-primary": "#ffffff",
+        "tertiary-fixed-dim": "#c8c8b0",
+        "primary-fixed": "#ffdbc9",
+        "on-primary-fixed-variant": "#753401",
+        "on-secondary": "#ffffff",
+        "secondary-fixed-dim": "#d6c692",
+        "tertiary-fixed": "#e4e4cc",
+        "primary-container": "#8b4513",
+        "on-secondary-fixed": "#231b00",
+        "error-container": "#ffdad6",
+        "surface-container-highest": "#e3e2e0",
+        "on-secondary-fixed-variant": "#51461e",
+        "surface-container-high": "#e9e8e5",
+        "on-surface-variant": "#54433a",
+        "background": "#faf9f6"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.25rem",
+        "lg": "0.5rem",
+        "xl": "0.75rem",
+        "full": "9999px"
+      },
+      "spacing": {
+        "margin-mobile": "20px",
+        "margin-desktop": "64px",
+        "gutter": "24px",
+        "unit": "8px",
+        "max-width": "1440px"
+      },
+      "fontFamily": {
+        "headline-md": ["Playfair Display"],
+        "label-md": ["Montserrat"],
+        "body-md": ["Montserrat"],
+        "label-sm": ["Montserrat"],
+        "headline-lg": ["Playfair Display"],
+        "headline-xl": ["Playfair Display"],
+        "body-lg": ["Montserrat"]
+      },
+      "fontSize": {
+        "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+        "label-md": ["14px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+        "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+        "label-sm": ["12px", {"lineHeight": "1", "fontWeight": "500"}],
+        "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "600"}],
+        "headline-xl": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}]
+      }
+    }
+  }
+}
+</script>
+<style>
+.glass-card {
+  background: rgba(255, 253, 208, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(194, 178, 128, 0.3);
+  box-shadow: 0 20px 40px -15px rgba(139, 69, 19, 0.08);
+}
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.text-shadow-subtle {
+  text-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+</style>
+</head>
+<body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
+<!-- Top Navigation Bar -->
+<header class="flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 w-full sticky top-0 z-50 bg-surface/80 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(139,69,19,0.08)]">
+<div class="text-headline-md font-headline-md font-bold tracking-tight text-primary">PureFlow Service</div>
+<nav class="hidden md:flex items-center gap-8">
+<a class="text-primary border-b-2 border-primary pb-1 font-label-md text-label-md" href="#">Home</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md" href="#">Services</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md" href="#">About</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md" href="#">Contact</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="hidden sm:block text-on-surface-variant hover:bg-surface-container-low/50 transition-all px-4 py-2 rounded-lg font-label-md text-label-md">Sign In</button>
+<button class="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all">Get Started</button>
+</div>
+</header>
+<main>
+<!-- Hero Section -->
+<section class="relative min-h-[870px] flex items-center overflow-hidden px-margin-mobile md:px-margin-desktop">
+<div class="absolute inset-0 z-0 bg-gradient-to-r from-background via-background/40 to-transparent"></div>
+<div class="relative z-10 max-w-2xl">
+<span class="inline-block px-4 py-1.5 rounded-full bg-secondary-container/50 text-on-secondary-container font-label-sm text-label-sm mb-6">REDEFINING WELLNESS</span>
+<h1 class="font-headline-xl text-headline-xl text-primary leading-tight mb-6">Pure Water.<br/>Pure Living.</h1>
+<p class="text-body-lg font-body-lg text-on-surface-variant mb-10 max-w-lg">Experience the pinnacle of hydration with our architectural purification solutions. Precision engineering meets minimalist design for your sanctuary.</p>
+<div class="flex flex-col sm:flex-row gap-4">
+<button class="bg-primary-container text-on-primary px-8 py-4 rounded-xl font-label-md text-label-md shadow-lg flex items-center justify-center gap-2 hover:translate-y-[-2px] transition-transform">
+Explore Systems
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<button class="glass-card px-8 py-4 rounded-xl font-label-md text-label-md text-primary flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
+View Services
+</button>
+</div>
+</div>
+</section>
+<!-- Service Highlight Grid -->
+<section class="py-24 px-margin-mobile md:px-margin-desktop max-w-max-width mx-auto">
+<div class="text-center mb-16">
+<h2 class="font-headline-lg text-headline-lg text-primary mb-4">Meticulous Care</h2>
+<p class="text-on-surface-variant max-w-xl mx-auto">Our specialized services ensure your water remains as pure as nature intended, delivered with white-glove professionalism.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<!-- Service Card 1 -->
+<div class="glass-card p-8 rounded-2xl group hover:translate-y-[-8px] transition-all duration-500">
+<div class="w-14 h-14 bg-secondary-container rounded-xl flex items-center justify-center mb-8 text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-[32px]">handyman</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Installation</h3>
+<p class="text-on-surface-variant mb-6">Expert integration of advanced filtration technology into your existing plumbing with architectural precision.</p>
+<a class="text-primary font-label-md text-label-md flex items-center gap-2 group-hover:gap-3 transition-all" href="#">
+Learn More <span class="material-symbols-outlined">chevron_right</span>
+</a>
+</div>
+<!-- Service Card 2 -->
+<div class="glass-card p-8 rounded-2xl group hover:translate-y-[-8px] transition-all duration-500">
+<div class="w-14 h-14 bg-secondary-container rounded-xl flex items-center justify-center mb-8 text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-[32px]">water_drop</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Maintenance</h3>
+<p class="text-on-surface-variant mb-6">Quarterly diagnostics and deep cleaning to maintain the crystalline integrity of your home's water supply.</p>
+<a class="text-primary font-label-md text-label-md flex items-center gap-2 group-hover:gap-3 transition-all" href="#">
+Learn More <span class="material-symbols-outlined">chevron_right</span>
+</a>
+</div>
+<!-- Service Card 3 -->
+<div class="glass-card p-8 rounded-2xl group hover:translate-y-[-8px] transition-all duration-500">
+<div class="w-14 h-14 bg-secondary-container rounded-xl flex items-center justify-center mb-8 text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-[32px]">published_with_changes</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Filter Replacement</h3>
+<p class="text-on-surface-variant mb-6">Scheduled genuine filter replacements utilizing high-density carbon and reverse osmosis membranes.</p>
+<a class="text-primary font-label-md text-label-md flex items-center gap-2 group-hover:gap-3 transition-all" href="#">
+Learn More <span class="material-symbols-outlined">chevron_right</span>
+</a>
+</div>
+</div>
+</section>
+<!-- CTA Section -->
+<section class="pb-24 px-margin-mobile md:px-margin-desktop">
+<div class="bg-primary-container rounded-[40px] p-12 md:p-24 text-center relative overflow-hidden">
+<div class="absolute inset-0 opacity-10 pointer-events-none">
+<div class="absolute top-0 right-0 w-96 h-96 bg-surface rounded-full blur-3xl"></div>
+</div>
+<h2 class="font-headline-xl text-headline-xl text-on-primary-container mb-8 relative z-10">Ready for a Flow State?</h2>
+<p class="text-body-lg text-on-primary-container/80 max-w-xl mx-auto mb-12 relative z-10">Join over 5,000 households that have upgraded their living standard with PureFlow Service.</p>
+<div class="flex flex-col sm:flex-row justify-center gap-4 relative z-10">
+<button class="bg-white text-primary px-10 py-5 rounded-2xl font-label-md text-label-md shadow-xl hover:scale-105 transition-transform">Book a Consultation</button>
+<button class="bg-primary text-on-primary px-10 py-5 rounded-2xl font-label-md text-label-md hover:opacity-90 transition-colors">Download Brochure</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-highest border-t border-outline-variant/10 py-16">
+<div class="max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop grid grid-cols-1 md:grid-cols-4 gap-gutter mb-16">
+<div class="col-span-1 md:col-span-2">
+<div class="text-headline-md font-headline-md text-primary mb-6">PureFlow Service</div>
+<p class="text-on-surface-variant max-w-md mb-8">Redefining residential water treatment through architectural minimalism and precision engineering.</p>
+<div class="flex gap-4">
+<a class="w-10 h-10 rounded-full glass-card flex items-center justify-center text-primary hover:bg-primary hover:text-on-primary transition-all" href="#">
+<span class="material-symbols-outlined text-lg">public</span>
+</a>
+<a class="w-10 h-10 rounded-full glass-card flex items-center justify-center text-primary hover:bg-primary hover:text-on-primary transition-all" href="#">
+<span class="material-symbols-outlined text-lg">mail</span>
+</a>
+<a class="w-10 h-10 rounded-full glass-card flex items-center justify-center text-primary hover:bg-primary hover:text-on-primary transition-all" href="#">
+<span class="material-symbols-outlined text-lg">call</span>
+</a>
+</div>
+</div>
+<div>
+<h5 class="font-label-md text-label-md text-primary mb-6 uppercase tracking-widest">Resources</h5>
+<ul class="space-y-4">
+<li><a class="text-on-surface-variant hover:text-primary transition-colors text-body-md" href="#">Privacy Policy</a></li>
+<li><a class="text-on-surface-variant hover:text-primary transition-colors text-body-md" href="#">Terms of Service</a></li>
+<li><a class="text-on-surface-variant hover:text-primary transition-colors text-body-md" href="#">FAQ</a></li>
+<li><a class="text-on-surface-variant hover:text-primary transition-colors text-body-md" href="#">Contact Us</a></li>
+</ul>
+</div>
+<div>
+<h5 class="font-label-md text-label-md text-primary mb-6 uppercase tracking-widest">Contact</h5>
+<p class="text-on-surface-variant text-body-md mb-4">1200 Wellness Way,<br/>San Francisco, CA 94103</p>
+<p class="text-on-surface-variant text-body-md">support@pureflow.com<br/>+1 (800) PURE-FLO</p>
+</div>
+</div>
+<div class="max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop pt-8 border-t border-outline-variant/20 flex flex-col md:flex-row justify-between items-center gap-4">
+<p class="text-label-sm text-on-surface-variant">© 2024 PureFlow Service. Pure Wellness, Defined.</p>
+<div class="flex gap-8">
+<a class="text-label-sm text-on-surface-variant hover:text-primary" href="#">Instagram</a>
+<a class="text-label-sm text-on-surface-variant hover:text-primary" href="#">LinkedIn</a>
+<a class="text-label-sm text-on-surface-variant hover:text-primary" href="#">Houzz</a>
+</div>
+</div>
+</footer>
+<!-- Floating WhatsApp Button -->
+<a class="fixed bottom-8 right-8 z-[60] bg-[#25D366] text-white p-4 rounded-full shadow-[0_10px_30px_rgba(37,211,102,0.3)] hover:scale-110 active:scale-95 transition-transform flex items-center justify-center" href="#">
+<svg class="w-8 h-8 fill-current" viewBox="0 0 24 24">
+<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"></path>
+</svg>
+</a>
+<!-- Mobile Bottom Navigation -->
+<div class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 md:hidden bg-surface/90 backdrop-blur-2xl border-t border-outline-variant/20 shadow-[0_-10px_30px_rgba(139,69,19,0.05)] rounded-t-xl">
+<a class="flex flex-col items-center justify-center bg-primary-container/20 text-primary rounded-xl px-4 py-1.5" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/70" href="#">
+<span class="material-symbols-outlined">waves</span>
+<span class="font-label-sm text-label-sm">Tracker</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/70" href="book-service.html">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="font-label-sm text-label-sm">Booking</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/70" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-sm text-label-sm">Profile</span>
+</a>
+</div>
+</body>
+</html>
