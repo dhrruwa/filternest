@@ -54,22 +54,28 @@ const features = [
 
 const testimonials = [
   {
-    quote: "FilterNest turned our household water supply into a true spa-level wellness experience. The countertop purifier matches our custom wood cabinetry perfectly, and the taste is incomparably pure.",
-    author: "Alistair C.",
-    location: "Beverly Hills Estate",
+    quote: "satisfied with service provided.",
+    author: "Mithun S.",
+    location: "Sri Sai Layout, Yelahanka",
     rating: 5,
   },
   {
-    quote: "The white-glove technicians integrated our entire reverse osmosis system in a single afternoon. Totally seamless service, clear communication, and incredible water purity index readings.",
-    author: "Genevieve R.",
-    location: "Central Park Penthouse",
+    quote: "the response of the agent was very nice and the work is very perfect",
+    author: "Dhruva K.",
+    location: "Yelahanka Residence",
+    rating: 4,
+  },
+  {
+    quote: "the service was fantastic",
+    author: "Nethra K.",
+    location: "Arasikere Sanctuary",
     rating: 5,
   },
   {
-    quote: "As a premium residential builder, we specify FilterNest systems in all our high-end projects. Their aesthetics, performance metrics, and customer dashboard represents the absolute gold standard.",
-    author: "Marcus T.",
-    location: "Luxury Property Developer",
-    rating: 5,
+    quote: "excelent",
+    author: "Megha K.",
+    location: "Arasikere Residence",
+    rating: 4,
   },
 ];
 
