@@ -43,13 +43,27 @@ const bookingSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'agent_assigned', 'on_the_way', 'in_progress', 'completed', 'cancelled'],
+      enum: ['pending', 'confirmed', 'agent_assigned', 'accepted', 'travelling', 'arrived', 'started', 'completed', 'cancelled'],
       default: 'pending',
     },
     assignedAgent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Agent',
     },
+    assignmentExpiresAt: {
+      type: Date
+    },
+    acceptedAt: {
+      type: Date
+    },
+    rejectedAt: {
+      type: Date
+    },
+    rejectedByAgents: [{
+      agent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent' },
+      reason: String,
+      rejectedAt: { type: Date, default: Date.now }
+    }],
     description: String,
     priority: {
       type: String,
@@ -76,6 +90,12 @@ const bookingSchema = new mongoose.Schema(
     notes: String,
     agentNotes: String,
     photos: [String],
+    completionProof: {
+      photos: [String],
+      signatureUrl: String,
+      remarks: String,
+      completedAt: Date
+    },
     invoice: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Invoice',

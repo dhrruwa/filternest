@@ -12,6 +12,34 @@ const { xssClean, csrfCheck } = require('./middleware/securityMiddleware');
 const path = require('path');
 
 const app = express();
+const server = require('http').createServer(app);
+const io = require('socket.io')(server, {
+  cors: {
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  }
+});
+
+// Socket connection listener
+io.on('connection', (socket) => {
+  console.log(`[SOCKET] Client connected: ${socket.id}`);
+
+  socket.on('join', (room) => {
+    socket.join(room);
+    console.log(`[SOCKET] Client ${socket.id} joined room: ${room}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[SOCKET] Client disconnected: ${socket.id}`);
+  });
+});
+
+// Attach io to req object
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
@@ -115,7 +143,7 @@ startMaintenanceReminderScheduler();
 console.log('Maintenance reminder scheduler started');
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log('All services initialized successfully');
 });

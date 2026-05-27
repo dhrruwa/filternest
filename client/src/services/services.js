@@ -74,6 +74,27 @@ export const agentService = {
   getAssignedBookings: () => api.get('/agents/bookings/assigned'),
   getCompletedServices: () => api.get('/agents/bookings/completed'),
   getAgentPortfolio: (agentId) => api.get(`/agents/${agentId}/portfolio`),
+  
+  // Attendance
+  checkIn: () => api.post('/agents/attendance/check-in'),
+  checkOut: () => api.post('/agents/attendance/check-out'),
+  getAttendanceHeatmap: () => api.get('/agents/attendance/heatmap'),
+
+  // Earnings
+  getEarnings: () => api.get('/agents/earnings'),
+  requestWithdrawal: (amount) => api.post('/agents/earnings/withdraw', { amount }),
+
+  // GPS logs ping
+  logGPSPing: (latitude, longitude, activeBookingId) => 
+    api.post('/agents/location/ping', { latitude, longitude, activeBookingId }),
+
+  // Booking lifecycle FSM
+  acceptJob: (bookingId) => api.put(`/agents/bookings/${bookingId}/accept`),
+  rejectJob: (bookingId, reason) => api.put(`/agents/bookings/${bookingId}/reject`, { reason }),
+  transitionJobStatus: (bookingId, status, latitude, longitude) => 
+    api.put(`/agents/bookings/${bookingId}/transition`, { status, latitude, longitude }),
+  submitCompletionProof: (bookingId, signature, remarks, purityData) => 
+    api.post(`/agents/bookings/${bookingId}/complete-proof`, { signature, remarks, purityData })
 };
 
 // Admin services
