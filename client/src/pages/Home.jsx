@@ -231,7 +231,7 @@ const Home = () => {
       </section>
 
       {/* Services Showcase Preview */}
-      <section className="py-24 bg-surface-container-low px-margin-mobile md:px-margin-desktop border-y border-outline-variant/10">
+      <section className="py-24 bg-transparent px-margin-mobile md:px-margin-desktop border-y border-outline-variant/10">
         <div className="max-w-max-width mx-auto">
           <div className="text-center mb-16">
             <span className="text-label-sm font-label-sm text-secondary uppercase tracking-widest block mb-3">CURATED RANGE</span>
@@ -350,112 +350,7 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Dynamic Reviews Board Section */}
-      <section className="py-24 bg-surface-container-low px-margin-mobile md:px-margin-desktop border-t border-outline-variant/10">
-        <div className="max-w-max-width mx-auto">
-          <div className="text-center mb-16">
-            <span className="text-label-sm font-label-sm text-secondary uppercase tracking-widest block mb-3">TRUSTED NATIONWIDE</span>
-            <h2 className="text-headline-lg text-headline-lg font-bold text-primary text-gradient mb-4">Sanctuary Reviews Board</h2>
-            <p className="text-on-surface-variant max-w-xl mx-auto text-body-md font-body-md">
-              Real, verified feedback from customer properties experiencing spa-level water purification.
-            </p>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
-            {publicReviews.length > 0 ? (
-              publicReviews.map((review, idx) => {
-                const customerName = review.customer 
-                  ? `${review.customer.firstName} ${review.customer.lastName ? review.customer.lastName.charAt(0) + '.' : ''}`
-                  : 'Valued Customer';
-                return (
-                  <motion.div
-                    key={review._id || idx}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="glass-card rounded-2xl p-8 flex flex-col justify-between group border border-outline-variant/20 hover:shadow-xl hover:translate-y-[-4px] transition-all duration-300"
-                  >
-                    <div>
-                      <div className="flex justify-between items-center mb-6">
-                        <div className="flex gap-0.5 text-amber-500">
-                          {[...Array(5)].map((_, i) => (
-                            <FiStar
-                              key={i}
-                              size={16}
-                              fill={i < (review.feedback?.rating || 5) ? "currentColor" : "none"}
-                              className="text-amber-500"
-                            />
-                          ))}
-                        </div>
-                        <span className="px-2.5 py-0.5 bg-primary/5 text-primary text-[9px] uppercase font-bold tracking-wider rounded-full">
-                          {review.serviceType?.replace(/_/g, ' ') || 'Purification'}
-                        </span>
-                      </div>
-                      
-                      <p className="text-on-surface-variant mb-8 text-sm italic font-medium leading-relaxed">
-                        "{review.feedback?.review || 'Excellent service and perfect water filter quality!'}"
-                      </p>
-                    </div>
-
-                    <div className="flex justify-between items-end border-t border-outline-variant/10 pt-4 mt-auto">
-                      <div>
-                        <p className="font-bold text-xs text-primary">{customerName}</p>
-                        <p className="text-[10px] text-on-surface-variant/70 mt-0.5">Verified Sanctuary Owner</p>
-                      </div>
-                      <p className="text-[9px] text-on-surface-variant/50">
-                        {review.feedback?.submittedAt ? new Date(review.feedback.submittedAt).toLocaleDateString(undefined, { dateStyle: 'short' }) : 'Recently'}
-                      </p>
-                    </div>
-                  </motion.div>
-                );
-              })
-            ) : (
-              // Beautiful Fallback cards using static testimonials if no reviews exist in DB yet
-              testimonials.map((test, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="glass-card rounded-2xl p-8 flex flex-col justify-between group border border-outline-variant/20 hover:shadow-xl hover:translate-y-[-4px] transition-all duration-300"
-                >
-                  <div>
-                    <div className="flex justify-between items-center mb-6">
-                      <div className="flex gap-0.5 text-amber-500">
-                        {[...Array(5)].map((_, i) => (
-                          <FiStar
-                            key={i}
-                            size={16}
-                            fill={i < test.rating ? "currentColor" : "none"}
-                            className="text-amber-500"
-                          />
-                        ))}
-                      </div>
-                      <span className="px-2.5 py-0.5 bg-primary/5 text-primary text-[9px] uppercase font-bold tracking-wider rounded-full">
-                        Sanctuary Core
-                      </span>
-                    </div>
-                    
-                    <p className="text-on-surface-variant mb-8 text-sm italic font-medium leading-relaxed">
-                      "{test.quote}"
-                    </p>
-                  </div>
-
-                  <div className="flex justify-between items-end border-t border-outline-variant/10 pt-4 mt-auto">
-                    <div>
-                      <p className="font-bold text-xs text-primary">{test.author}</p>
-                      <p className="text-[10px] text-on-surface-variant/70 mt-0.5">{test.location}</p>
-                    </div>
-                    <p className="text-[9px] text-on-surface-variant/50">Verified Owner</p>
-                  </div>
-                </motion.div>
-              ))
-            )}
-          </div>
-        </div>
-      </section>
 
       {/* Majestic CTA Section */}
       <section className="py-24 px-margin-mobile md:px-margin-desktop max-w-max-width mx-auto">

@@ -18,7 +18,7 @@ html {
 
 body {
   font-family: 'Montserrat', sans-serif;
-  background: linear-gradient(135deg, #faf9f6 0%, #f4f3f1 60%, #dac2b6 100%) !important;
+  background: linear-gradient(135deg, #f0ece4 0%, #e9e6e0 40%, #c2aba0 100%) !important;
   background-attachment: fixed !important;
   color: #1a1c1a;
   min-height: 100vh;
