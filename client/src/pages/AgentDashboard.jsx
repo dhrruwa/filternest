@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { io } from 'socket.io-client';
+import { useSearchParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import JobDetailsModal from '../components/JobDetailsModal';
 import { agentService, bookingService, notificationService } from '../services/services';
 import { useAuthStore } from '../context/authStore';
 import toast from 'react-hot-toast';
+import SecurityDashboard from '../components/SecurityDashboard';
 import { 
   FiMapPin, 
   FiPhone, 
@@ -17,450 +19,164 @@ import {
   FiChevronRight, 
   FiSettings, 
   FiBell, 
+  FiBellOff, 
+  FiInfo, 
+  FiAlertCircle, 
   FiActivity, 
   FiAward, 
   FiSliders, 
   FiShield, 
   FiMap,
-  FiDollarSign,
-  FiXCircle,
-  FiNavigation,
-  FiHeart,
-  FiStar,
-  FiPlay,
-  FiCheck,
-  FiPower
+  FiPrinter
 } from 'react-icons/fi';
-import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
-import L from 'leaflet';
 
 const AgentDashboard = () => {
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('jobs'); // 'jobs', 'earnings', 'performance', 'profile'
-  
-  // Shift state
-  const [isShiftActive, setIsShiftActive] = useState(false);
-  const [shiftData, setShiftData] = useState(null);
-  const [shiftDuration, setShiftDuration] = useState('00:00:00');
-  
-  // Dashboard & Bookings state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentView = searchParams.get('view') || 'assigned';
   const [assignedJobs, setAssignedJobs] = useState([]);
   const [completedServices, setCompletedServices] = useState([]);
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeJob, setActiveJob] = useState(null);
-  const [incomingJob, setIncomingJob] = useState(null);
-  const [acceptanceTimer, setAcceptanceTimer] = useState(60);
-  
-  // Modals / Drawers
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState('');
-  
-  // Signature pad references
-  const canvasRef = useRef(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  
-  // Map References for turn-by-turn navigation card
-  const mapRef = useRef(null);
-  const mapInstance = useRef(null);
-
-  // Heatmap & Earnings data
-  const [attendanceHeatmap, setAttendanceHeatmap] = useState({});
-  const [earningsData, setEarningsData] = useState({
-    balance: 0,
-    todayEarnings: 0,
-    weeklyEarnings: 0,
-    monthlyEarnings: 0,
-    incentives: 0,
-    bonusRewards: 0,
-    completedJobsCount: 0,
-    transactions: []
-  });
-  
-  // Notifications
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
-  
-  // Profile / Settings
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Availability status state for breathing pulse toggle
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Purity Certification Wizard States
+  const [showPurityModal, setShowPurityModal] = useState(false);
+  const [certifyingJob, setCertifyingJob] = useState(null);
+  const [purityData, setPurityData] = useState({
+    tdsInput: 280,
+    tdsOutput: 18,
+    phLevel: 7.2,
+    sedimentHealth: 95,
+    carbonHealth: 98,
+    membraneHealth: 90,
+    remarks: 'Water filtration system fully serviced, filters sanitized, and optimal purity levels achieved.'
+  });
+  const [generatedCertificate, setGeneratedCertificate] = useState(null);
+
   const [settingsData, setSettingsData] = useState({
-    status: 'offline',
-    travelRadius: 15,
+    status: 'available',
     emailNotifications: true,
     smsNotifications: true,
+    travelRadius: 15,
+    emergencyDispatch: false,
     firstName: '',
     lastName: '',
     phone: '',
-    address: { street: '', city: '', state: '', pincode: '', country: 'India' }
+    address: {
+      street: '',
+      city: '',
+      state: '',
+      pincode: '',
+      country: 'India',
+    }
   });
 
-  // Socket instance
-  const socketRef = useRef(null);
+  const certificateRef = useRef(null);
 
-  // Initialize socket connection
-  useEffect(() => {
-    const socketUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:5001';
-    socketRef.current = io(socketUrl, { withCredentials: true });
-
-    socketRef.current.emit('join', `agent_${user?._id || user?.id}`);
-
-    socketRef.current.on('booking_assigned', (data) => {
-      setIncomingJob(data);
-      setAcceptanceTimer(60);
-      toast.success('⚠️ New Urgent Dispatch Assigned!', { duration: 6000 });
-      // Try playing sound if user permitted
-      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav');
-      audio.play().catch(() => {});
-    });
-
-    socketRef.current.on('booking_cancelled', (data) => {
-      toast.error('Booking has been cancelled by customer');
-      fetchDashboardData();
-    });
-
-    return () => {
-      if (socketRef.current) socketRef.current.disconnect();
-    };
-  }, [user]);
-
-  // Global background watch geolocation logic for real-time tracking
-  useEffect(() => {
-    let watchId;
-    if (isShiftActive && profile?.status !== 'offline') {
-      const geoOptions = {
-        enableHighAccuracy: true,
-        maximumAge: 10000,
-        timeout: 10000
-      };
-      
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          agentService.logGPSPing(latitude, longitude, activeJob?._id).catch(console.error);
-        },
-        (error) => console.error('[GPS] Watch position error:', error),
-        geoOptions
-      );
-    }
-    return () => {
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-    };
-  }, [isShiftActive, profile?.status, activeJob?._id]);
-
-  // Acceptance timer countdown logic
-  useEffect(() => {
-    let interval;
-    if (incomingJob) {
-      interval = setInterval(() => {
-        setAcceptanceTimer(prev => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            // Handle timeout auto reject
-            handleRejectJob('Timeout expired');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [incomingJob]);
-
-  // Shift Active Duration Timer
-  useEffect(() => {
-    let interval;
-    if (isShiftActive && shiftData?.checkIn) {
-      interval = setInterval(() => {
-        const start = new Date(shiftData.checkIn).getTime();
-        const diff = Date.now() - start;
-        
-        const hrs = Math.floor(diff / 3600000);
-        const mins = Math.floor((diff % 3600000) / 60000);
-        const secs = Math.floor((diff % 60000) / 1000);
-        
-        setShiftDuration(
-          `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-        );
-      }, 1000);
-    } else {
-      setShiftDuration('00:00:00');
-    }
-    return () => clearInterval(interval);
-  }, [isShiftActive, shiftData]);
-
-  // Turn-by-turn interactive map rendering inside dispatch modal
-  useEffect(() => {
-    if (activeTab === 'jobs' && activeJob?.serviceLocation?.coordinates && mapRef.current) {
-      if (mapInstance.current) {
-        mapInstance.current.remove();
-      }
-
-      const [lng, lat] = activeJob.serviceLocation.coordinates;
-      mapInstance.current = L.map(mapRef.current).setView([lat, lng], 15);
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap'
-      }).addTo(mapInstance.current);
-
-      L.marker([lat, lng], {
-        icon: L.icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          shadowSize: [41, 41],
-        })
-      })
-        .bindPopup(`<b>Target Location</b><br/>${activeJob.serviceLocation?.address?.street}`)
-        .addTo(mapInstance.current)
-        .openPopup();
-    }
-    return () => {
-      if (mapInstance.current) {
-        mapInstance.current.remove();
-        mapInstance.current = null;
-      }
-    };
-  }, [activeTab, activeJob]);
-
-  // Fetch all core system data
-  const fetchDashboardData = async () => {
+  // Fetch initial profile & bookings
+  const fetchData = async () => {
     try {
-      const [profileRes, assignedRes, completedRes, heatmapRes, earningsRes, notificationsRes] = await Promise.all([
-        agentService.getProfile(),
+      const [jobsRes, completedRes, profileRes, notificationsRes] = await Promise.all([
         agentService.getAssignedBookings(),
         agentService.getCompletedServices(),
-        agentService.getAttendanceHeatmap(),
-        agentService.getEarnings(),
-        notificationService.getNotifications()
+        agentService.getProfile(),
+        notificationService.getNotifications(),
       ]);
-
-      const agentProfile = profileRes.data;
-      setProfile(agentProfile);
-      setAssignedJobs(assignedRes.data || []);
+      
+      setAssignedJobs(jobsRes.data || []);
       setCompletedServices(completedRes.data || []);
-      setAttendanceHeatmap(heatmapRes.data || {});
-      setEarningsData(earningsRes.data || {});
+      setProfile(profileRes.data);
       setNotifications(notificationsRes.data || []);
-
-      // Derive shift active state from profile status
-      if (agentProfile.status !== 'offline') {
-        setIsShiftActive(true);
-        // Synthesize temporary check-in info
-        setShiftData({ checkIn: agentProfile.updatedAt || new Date() });
-      } else {
-        setIsShiftActive(false);
-        setShiftData(null);
-      }
-
-      // Check if there is an active running job in the dispatches queue
-      const active = assignedRes.data.find(
-        j => ['accepted', 'travelling', 'arrived', 'started'].includes(j.status)
-      );
-      setActiveJob(active || null);
-
-      // Populate settings config state
-      setSettingsData({
-        status: agentProfile.status || 'offline',
-        travelRadius: parseInt(localStorage.getItem('agent_radius') || '15', 10),
-        emailNotifications: localStorage.getItem('agent_email_notif') !== 'false',
-        smsNotifications: localStorage.getItem('agent_sms_notif') !== 'false',
-        firstName: agentProfile.firstName || '',
-        lastName: agentProfile.lastName || '',
-        phone: agentProfile.phone || '',
-        address: {
-          street: agentProfile.address?.street || '',
-          city: agentProfile.address?.city || '',
-          state: agentProfile.address?.state || '',
-          pincode: agentProfile.address?.pincode || '',
-          country: agentProfile.address?.country || 'India',
-        }
-      });
-
     } catch (error) {
-      console.error('Failed to sync partner command dashboard:', error);
+      console.error('Failed to load dashboard details:', error.response?.data || error);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  // ----------------------------------------------------
-  // WORKFLOW ACTION HANDLERS
-  // ----------------------------------------------------
+  // Update Settings initial states when profile loads
+  useEffect(() => {
+    if (profile) {
+      setSettingsData({
+        status: profile.status || 'offline',
+        emailNotifications: localStorage.getItem('agent_email_notif') !== 'false',
+        smsNotifications: localStorage.getItem('agent_sms_notif') !== 'false',
+        travelRadius: parseInt(localStorage.getItem('agent_radius') || '15', 10),
+        emergencyDispatch: localStorage.getItem('agent_emergency') === 'true',
+        firstName: profile.firstName || '',
+        lastName: profile.lastName || '',
+        phone: profile.phone || '',
+        address: {
+          street: profile.address?.street || '',
+          city: profile.address?.city || '',
+          state: profile.address?.state || '',
+          pincode: profile.address?.pincode || '',
+          country: profile.address?.country || 'India',
+        }
+      });
+    }
+  }, [profile]);
 
-  const handleClockInOut = async () => {
+  // Handle availability mode quick status switch
+  const handleToggleDutyStatus = async (newStatus) => {
+    if (isUpdatingStatus) return;
+    setIsUpdatingStatus(true);
     try {
-      if (!isShiftActive) {
-        // Clock In
-        const res = await agentService.checkIn();
-        setIsShiftActive(true);
-        setShiftData(res.data.attendance);
-        setProfile(prev => ({ ...prev, status: 'available' }));
-        toast.success('🟢 Shift Active. GPS Fleet Tracker online!');
-      } else {
-        // Clock Out
-        const res = await agentService.checkOut();
-        setIsShiftActive(false);
-        setShiftData(null);
-        setProfile(prev => ({ ...prev, status: 'offline' }));
-        setActiveJob(null);
-        toast.success(`🔴 Shift Completed. Worked ${res.data.attendance.workingHours} Hours today.`);
-      }
-      fetchDashboardData();
+      await agentService.updateStatus(newStatus);
+      setProfile(prev => ({ ...prev, status: newStatus }));
+      setSettingsData(prev => ({ ...prev, status: newStatus }));
+      toast.success(`Duty status updated to ${newStatus}`);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Shift action failed');
+      toast.error('Failed to update status');
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
-  const handleAcceptJob = async () => {
-    if (!incomingJob) return;
+  const handleMarkAsRead = async (notificationId) => {
     try {
-      await agentService.acceptJob(incomingJob._id);
-      toast.success('✅ Job Accepted. Set parameters for travel navigation!');
-      setIncomingJob(null);
-      fetchDashboardData();
+      await notificationService.markAsRead(notificationId);
+      setNotifications(prev => prev.map(n =>
+        n._id === notificationId ? { ...n, isRead: true } : n
+      ));
     } catch (error) {
-      toast.error('Could not accept job');
+      console.error('Failed to mark notification as read:', error);
     }
   };
 
-  const handleRejectJob = async (reasonText) => {
-    const job = incomingJob || activeJob;
-    if (!job) return;
+  const handleMarkAllAsRead = async () => {
     try {
-      await agentService.rejectJob(job._id, reasonText || 'Declined');
-      toast.success('❌ Dispatch rejected and returned to command queue');
-      setIncomingJob(null);
-      setShowRejectModal(false);
-      setRejectReason('');
-      fetchDashboardData();
+      const unreadNotifications = notifications.filter(n => !n.isRead);
+      if (unreadNotifications.length === 0) return;
+      await Promise.all(unreadNotifications.map(n => notificationService.markAsRead(n._id)));
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      toast.success('All notifications marked as read');
     } catch (error) {
-      toast.error('Could not decline job');
+      console.error('Failed to mark all notifications as read:', error);
+      toast.error('Failed to mark all as read');
     }
   };
 
-  const handleStatusTransition = async (nextStatus) => {
-    if (!activeJob) return;
-    try {
-      // Fetch geolocation coordinates if possible to log tracking points
-      let coords = { latitude: null, longitude: null };
-      if (navigator.geolocation) {
-        await new Promise((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              coords.latitude = pos.coords.latitude;
-              coords.longitude = pos.coords.longitude;
-              resolve();
-            },
-            () => resolve(),
-            { timeout: 5000 }
-          );
-        });
-      }
-
-      await agentService.transitionJobStatus(activeJob._id, nextStatus, coords.latitude, coords.longitude);
-      toast.success(`Stage upgraded to: ${nextStatus.toUpperCase()}`);
-      fetchDashboardData();
-    } catch (error) {
-      toast.error('Failed to transition job status');
-    }
-  };
-
-  // Canvas Drawing Methods for Proof Signature
-  const startDrawing = (e) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#6c2f00'; // luxury brown
-
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top;
-
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    setIsDrawing(true);
-  };
-
-  const draw = (e) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
-    const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-  };
-
-  const handleCompleteService = async () => {
-    if (!activeJob) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const signatureDataUrl = canvas.toDataURL(); // Base64 signature
-    
-    // Synthesize Purity certificate details
-    const purityMetrics = {
-      tdsInput: 275,
-      tdsOutput: 16,
-      phLevel: 7.3,
-      sedimentHealth: 96,
-      carbonHealth: 98,
-      membraneHealth: 92,
-      remarks: 'Water filtration wellness indices perfectly calibrated & certified.'
-    };
-
-    try {
-      await agentService.submitCompletionProof(activeJob._id, signatureDataUrl, 'System sanitization complete', purityMetrics);
-      toast.success('🏆 Job complete. commission balance added successfully!');
-      setShowCompleteModal(false);
-      setActiveJob(null);
-      fetchDashboardData();
-    } catch (error) {
-      toast.error('Failed to register service completion');
-    }
-  };
-
-  const handleRequestWithdrawal = async (e) => {
-    e.preventDefault();
-    const val = parseFloat(withdrawAmount);
-    if (!val || val <= 0) {
-      return toast.error('Enter a valid amount');
-    }
-    if (val > earningsData.balance) {
-      return toast.error('Insufficient withdrawable balance');
-    }
-    try {
-      await agentService.requestWithdrawal(val);
-      toast.success(`💸 Cash-out successful! ₹${val} credited to registered bank account.`);
-      setShowWithdrawModal(false);
-      setWithdrawAmount('');
-      fetchDashboardData();
-    } catch (error) {
-      toast.error('Withdrawal request failed');
+  const handleViewJobDetails = (bookingId) => {
+    const job = assignedJobs.find(j => j._id === bookingId) || completedServices.find(j => j._id === bookingId);
+    if (job) {
+      setSelectedBooking(job);
+      setShowDetailsModal(true);
+    } else {
+      toast.error('Job details not found');
     }
   };
 
@@ -476,58 +192,144 @@ const AgentDashboard = () => {
           address: settingsData.address,
         })
       ]);
-
+      
       localStorage.setItem('agent_email_notif', settingsData.emailNotifications);
       localStorage.setItem('agent_sms_notif', settingsData.smsNotifications);
       localStorage.setItem('agent_radius', settingsData.travelRadius);
+      localStorage.setItem('agent_emergency', settingsData.emergencyDispatch);
 
-      toast.success('Workspace configurations updated successfully!');
-      fetchDashboardData();
+      setProfile(prev => ({
+        ...prev,
+        status: settingsData.status,
+        firstName: settingsData.firstName,
+        lastName: settingsData.lastName,
+        phone: settingsData.phone,
+        address: settingsData.address,
+      }));
+
+      toast.success('Settings saved successfully!');
+      setShowSettingsModal(false);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to save settings');
+      console.error('Failed to update settings details:', error.response?.data || error);
+      toast.error(error.response?.data?.error || 'Failed to update settings');
     }
   };
 
-  const markNotificationRead = async (id) => {
+  // Update Status state pipeline tracker
+  const handleUpdateStatus = async (bookingId, status) => {
     try {
-      await notificationService.markAsRead(id);
-      setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
-    } catch (e) {
-      console.error(e);
+      await bookingService.updateBookingStatus(bookingId, { status });
+      toast.success(`Job marked as ${status.replace(/_/g, ' ')}`);
+      setAssignedJobs(prev => prev.map(job => 
+        job._id === bookingId ? { ...job, status } : job
+      ));
+      if (selectedBooking && selectedBooking._id === bookingId) {
+        setSelectedBooking(prev => ({ ...prev, status }));
+      }
+    } catch (error) {
+      toast.error('Failed to update job status');
     }
   };
 
-  // Helper: Haversine distance calculator for turn-by-turn details
-  const getDistanceToJob = () => {
-    if (!activeJob?.serviceLocation?.coordinates || !profile?.currentLocation?.coordinates) return '1.2 km';
-    const [cLng, cLat] = profile.currentLocation.coordinates;
-    const [jLng, jLat] = activeJob.serviceLocation.coordinates;
-
-    const R = 6371; // Earth radius in km
-    const dLat = (jLat - cLat) * Math.PI / 180;
-    const dLng = (jLng - cLng) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(cLat * Math.PI / 180) * Math.cos(jLat * Math.PI / 180) * 
-      Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const d = R * c; // Distance in km
-    return d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
+  // Launch Purity Certification wizard
+  const triggerPurityCertification = (job) => {
+    setCertifyingJob(job);
+    // Reset to professional baseline defaults
+    setPurityData({
+      tdsInput: 280,
+      tdsOutput: 18,
+      phLevel: 7.2,
+      sedimentHealth: 95,
+      carbonHealth: 98,
+      membraneHealth: 90,
+      remarks: 'Water filtration system fully serviced, filters sanitized, and optimal purity levels achieved.'
+    });
+    setShowPurityModal(true);
   };
 
-  // Generate continuous attendance dates list for heatmap rendering
-  const getHeatmapGridDates = () => {
-    const dates = [];
-    const now = new Date();
-    // 60 days baseline history
-    for (let i = 59; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      dates.push(`${year}-${month}-${day}`);
+  // Submit Purity Certificate to backend & complete the job
+  const handleCompleteWithCertificate = async (e) => {
+    e.preventDefault();
+    if (!certifyingJob) return;
+
+    const purificationRate = Math.round(((purityData.tdsInput - purityData.tdsOutput) / purityData.tdsInput) * 100);
+    const certPayload = {
+      certId: `FN-${Math.floor(100000 + Math.random() * 900000)}`,
+      date: new Date().toLocaleDateString('en-US', { dateStyle: 'long' }),
+      specialist: `${profile?.firstName} ${profile?.lastName}`,
+      specialistId: profile?.agentId,
+      jobType: certifyingJob.serviceType?.replace(/_/g, ' '),
+      customer: certifyingJob.customer?.firstName && certifyingJob.customer?.lastName 
+        ? `${certifyingJob.customer.firstName} ${certifyingJob.customer.lastName}`
+        : 'Care Recipient',
+      metrics: {
+        tdsInput: purityData.tdsInput,
+        tdsOutput: purityData.tdsOutput,
+        purificationRate,
+        phLevel: purityData.phLevel,
+        sedimentHealth: purityData.sedimentHealth,
+        carbonHealth: purityData.carbonHealth,
+        membraneHealth: purityData.membraneHealth,
+      },
+      remarks: purityData.remarks,
+      signatureCode: `SIG-${profile?.agentId}-${Date.now().toString().slice(-4)}`
+    };
+
+    const notesString = `[PURITY_CERTIFICATE]:${JSON.stringify(certPayload)}`;
+
+    try {
+      await bookingService.updateBookingStatus(certifyingJob._id, {
+        status: 'completed',
+        notes: notesString
+      });
+      
+      toast.success('Purity Certificate registered & service completed successfully!');
+      
+      // Update local state dispatches
+      setAssignedJobs(prev => prev.filter(j => j._id !== certifyingJob._id));
+      setCompletedServices(prev => [
+        { ...certifyingJob, status: 'completed', agentNotes: notesString, completedAt: new Date() },
+        ...prev
+      ]);
+
+      setGeneratedCertificate(certPayload);
+      setShowPurityModal(false);
+    } catch (error) {
+      console.error('Failed to complete service:', error);
+      toast.error('Failed to complete job');
     }
-    return dates;
+  };
+
+  // Stagger variants for elegant dashboard entrance
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.05,
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } }
+  };
+
+  // Helper: TDS evaluation
+  const getTdsStatus = (tds) => {
+    if (tds < 50) return { label: 'Optimal Purity', color: 'text-emerald-600 bg-emerald-50 border-emerald-100' };
+    if (tds <= 150) return { label: 'Excellent', color: 'text-teal-600 bg-teal-50 border-teal-100' };
+    if (tds <= 300) return { label: 'Fair/Acceptable', color: 'text-amber-600 bg-amber-50 border-amber-100' };
+    return { label: 'Substandard', color: 'text-rose-600 bg-rose-50 border-rose-100' };
+  };
+
+  // Helper: pH evaluation
+  const getPhStatus = (ph) => {
+    if (ph >= 7.0 && ph <= 7.8) return { label: 'Neutral (Optimal)', color: 'text-emerald-600 bg-emerald-50 border-emerald-100' };
+    if (ph < 7.0) return { label: 'Slightly Acidic', color: 'text-sky-600 bg-sky-50 border-sky-100' };
+    return { label: 'Slightly Alkaline', color: 'text-indigo-600 bg-indigo-50 border-indigo-100' };
   };
 
   if (isLoading) {
@@ -536,11 +338,11 @@ const AgentDashboard = () => {
         <Navbar />
         <div className="flex items-center justify-center h-[70vh]">
           <div className="text-center space-y-4">
-            <div className="relative w-12 h-12 mx-auto">
+            <div className="relative w-16 h-16 mx-auto">
               <div className="absolute inset-0 rounded-full border-4 border-primary/20 animate-pulse"></div>
               <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary animate-spin"></div>
             </div>
-            <p className="text-xs font-bold tracking-widest text-primary/80 uppercase">Synchronizing Command Center...</p>
+            <p className="text-sm font-semibold tracking-wider text-primary uppercase">Synchronizing Dispatches...</p>
           </div>
         </div>
         <Footer />
@@ -549,887 +351,1373 @@ const AgentDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#faf9f6] text-on-surface flex flex-col justify-between">
+    <div className="min-h-screen relative overflow-hidden bg-[#faf9f6] text-on-surface">
+      {/* Premium backdrop glows */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute -left-1/4 top-1/4 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl"></div>
+        <div className="absolute -right-1/4 top-1/3 w-[600px] h-[600px] rounded-full bg-blue-500/5 blur-3xl"></div>
+      </div>
+
       <Navbar />
 
-      <main className="flex-grow max-w-lg mx-auto w-full px-margin-mobile py-6 pb-24 relative">
-        {/* Top welcome widget */}
-        <div className="flex justify-between items-center mb-6">
+      <main className="relative z-10 py-12 px-margin-mobile md:px-margin-desktop max-w-max-width mx-auto">
+        {/* Welcome Workspace Greeting Banner */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-10 pb-6 border-b border-outline-variant/20"
+        >
           <div>
-            <span className="text-[9px] font-bold text-primary uppercase tracking-widest block">Operational command</span>
-            <h2 className="text-xl font-bold text-primary font-headline-md leading-tight capitalize">
-              Hi, {profile?.firstName || 'Specialist'}
-            </h2>
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-primary animate-ping"></span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary/80">Operations Command Center</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black font-headline-xl text-primary mt-1 tracking-tight">
+              Welcome, {profile?.firstName ? (profile.firstName.charAt(0).toUpperCase() + profile.firstName.slice(1)) : 'Specialist'}
+            </h1>
+            <p className="text-on-surface-variant text-sm mt-1 leading-relaxed max-w-xl">
+              Sanitize wellness grids, calibrate water purity standards, and manage scheduled service dispatches.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Notification badge alert bell */}
-            <button 
-              onClick={() => setShowNotificationsDrawer(true)}
-              className="relative p-2.5 bg-white shadow border border-outline-variant/30 rounded-full text-primary hover:scale-105 transition-all"
-            >
-              <FiBell size={16} />
-              {notifications.filter(n => !n.isRead).length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-600 rounded-full animate-pulse" />
+
+          {/* Quick status bar */}
+          <div className="flex items-center gap-3 bg-white/60 backdrop-blur-md px-4 py-2 border border-outline-variant/30 rounded-2xl shadow-sm self-start md:self-center">
+            <span className="text-xs text-on-surface-variant/80 font-bold">Command Mode</span>
+            <div className="h-4 w-px bg-outline-variant/30"></div>
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 rounded-full ${profile?.status === 'available' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-slate-400'}`}></span>
+              <span className="text-xs font-black uppercase tracking-wider text-primary">{profile?.status || 'offline'}</span>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Dual-Column Main Command Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter items-start">
+          
+          {/* LEFT SIDE: Assigned Jobs, Completed List, Notifications Center (2 Columns) */}
+          <div className="lg:col-span-2 space-y-8">
+            
+            {/* Navigational Tabs Bar */}
+            <div className="relative z-10 flex gap-1 p-1 bg-[#efeeeb]/60 backdrop-blur-md rounded-2xl border border-outline-variant/10 max-w-lg overflow-x-auto scrollbar-none">
+              {[
+                { id: 'assigned', label: `Assigned Jobs`, count: assignedJobs.length, icon: FiActivity },
+                { id: 'completed', label: `History`, count: completedServices.length, icon: FiCheckCircle },
+                { id: 'notifications', label: `Alerts`, count: notifications.filter(n => !n.isRead).length, icon: FiBell }
+              ].map((view) => {
+                const Icon = view.icon;
+                const isSelected = currentView === view.id;
+                return (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => setSearchParams({ view: view.id })}
+                    className={`relative z-10 px-5 py-3 rounded-xl font-label-md text-xs transition-all duration-300 flex items-center gap-2 whitespace-nowrap uppercase tracking-wider ${
+                      isSelected 
+                        ? 'text-on-primary font-bold shadow-md' 
+                        : 'text-on-surface-variant hover:text-primary font-semibold'
+                    }`}
+                  >
+                    {isSelected && (
+                      <motion.div
+                        layoutId="activeAgentTabGlow"
+                        className="absolute inset-0 z-[-1] bg-gradient-primary rounded-xl"
+                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      />
+                    )}
+                    <Icon size={14} />
+                    <span>{view.label}</span>
+                    {view.count > 0 && (
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isSelected ? 'bg-white text-primary' : 'bg-primary/10 text-primary'}`}>
+                        {view.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* TAB CONTAINER VIEW */}
+            <AnimatePresence mode="wait">
+              {currentView === 'assigned' && (
+                <motion.div
+                  key="assigned"
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="space-y-6"
+                >
+                  {assignedJobs.length === 0 ? (
+                    <motion.div 
+                      variants={itemVariants}
+                      className="glass-card p-16 text-center border border-outline-variant/15 rounded-3xl"
+                    >
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-primary/20">
+                        <FiSliders size={28} className="text-primary animate-pulse" />
+                      </div>
+                      <h3 className="text-primary font-bold text-lg font-headline-md mb-1">Queue Fully Clear</h3>
+                      <p className="text-on-surface-variant text-sm max-w-sm mx-auto leading-relaxed">
+                        There are no purification maintenance dispatches assigned to you today. Enjoy your day or toggle availability in Settings.
+                      </p>
+                    </motion.div>
+                  ) : (
+                    assignedJobs.map((job) => {
+                      const customerName = job.customer?.firstName && job.customer?.lastName
+                        ? `${job.customer.firstName} ${job.customer.lastName}`
+                        : 'Valued Customer';
+                      
+                      // Active workflow index helper
+                      const stepIndex = 
+                        job.status === 'pending' ? 0 : 
+                        job.status === 'confirmed' ? 1 : 
+                        job.status === 'in_progress' ? 2 : 3;
+
+                      return (
+                        <motion.div
+                          key={job._id}
+                          variants={itemVariants}
+                          className="glass-card border border-outline-variant/30 hover:border-primary/40 rounded-3xl p-6 shadow-md hover:shadow-xl hover:translate-y-[-2px] transition-all duration-300 relative overflow-hidden"
+                        >
+                          {/* Accent line based on active status */}
+                          <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${
+                            job.status === 'pending' ? 'bg-amber-400' :
+                            job.status === 'confirmed' ? 'bg-primary' :
+                            job.status === 'in_progress' ? 'bg-orange-500 animate-pulse' :
+                            'bg-emerald-500'
+                          }`}></div>
+
+                          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6 pl-2">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-xl font-bold text-primary capitalize font-headline-md">
+                                  {job.serviceType?.replace(/_/g, ' ')}
+                                </h3>
+                                <span className={`text-[9px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase border ${
+                                  job.priority === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200 shadow-sm animate-pulse' :
+                                  job.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                  'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}>
+                                  {job.priority || 'medium'} priority
+                                </span>
+                              </div>
+                              <p className="text-on-surface-variant/80 text-xs mt-1.5 font-semibold flex items-center gap-1.5">
+                                <FiClock className="text-primary/70" />
+                                {new Date(job.bookingDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(job.bookingDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+
+                            <span className={`self-start px-3 py-1.5 rounded-full font-black text-[10px] tracking-wider border uppercase ${
+                              job.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              job.status === 'confirmed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                              job.status === 'in_progress' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                              'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}>
+                              {job.status?.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          {/* Customer Profile Card */}
+                          <div className="bg-[#efeeeb]/55 rounded-2xl p-4 mb-5 border border-outline-variant/10 pl-5">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                                  <FiUser size={15} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[9px] uppercase font-black tracking-wider text-secondary">Customer Profile</span>
+                                  <p className="text-xs font-bold text-primary truncate leading-tight mt-0.5">{customerName}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                                  <FiPhone size={15} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[9px] uppercase font-black tracking-wider text-secondary">Mobile Line</span>
+                                  <a href={`tel:${job.customer?.phone}`} className="block text-xs font-bold text-primary hover:underline truncate leading-tight mt-0.5">{job.customer?.phone || 'N/A'}</a>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                                  <FiMail size={15} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[9px] uppercase font-black tracking-wider text-secondary">Email Coordinates</span>
+                                  <a href={`mailto:${job.customer?.email}`} className="block text-xs font-bold text-primary hover:underline truncate leading-tight mt-0.5">{job.customer?.email || 'N/A'}</a>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Estate Service Location */}
+                          <div className="bg-white/60 p-4 border border-outline-variant/10 rounded-2xl mb-6">
+                            <div className="flex items-start gap-3">
+                              <FiMapPin className="text-primary mt-0.5 flex-shrink-0" size={16} />
+                              <div className="min-w-0">
+                                <span className="text-[9px] uppercase font-black tracking-wider text-secondary">Sanitary Target Grid</span>
+                                <p className="text-xs font-bold text-primary mt-0.5 leading-normal">
+                                  {job.serviceLocation?.address?.street}, {job.serviceLocation?.address?.city}
+                                  {job.serviceLocation?.address?.state && `, ${job.serviceLocation.address.state}`}
+                                  {job.serviceLocation?.address?.pincode && ` - ${job.serviceLocation.address.pincode}`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Workflow Pipeline Progress Indicator */}
+                          <div className="mb-6 px-2">
+                            <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-wider text-secondary mb-3">
+                              <span>Service Pipeline Status</span>
+                              <span className="text-primary font-bold">{Math.round((stepIndex / 3) * 100)}% Optimized</span>
+                            </div>
+                            <div className="relative flex items-center justify-between w-full">
+                              {/* Background Line */}
+                              <div className="absolute left-0 right-0 h-1 bg-[#efeeeb] rounded-full z-0"></div>
+                              {/* Filled Line */}
+                              <div className="absolute left-0 h-1 bg-gradient-primary rounded-full z-0 transition-all duration-500" style={{ width: `${(stepIndex / 3) * 100}%` }}></div>
+
+                              {/* Pipeline Nodes */}
+                              {['Assigned', 'Confirmed', 'Active Dispatch', 'Certified'].map((stepName, idx) => {
+                                const isPassed = stepIndex >= idx;
+                                const isCurrent = stepIndex === idx;
+                                return (
+                                  <div key={idx} className="relative z-10 flex flex-col items-center">
+                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                                      isPassed ? 'bg-primary border-primary text-white scale-110 shadow-sm' : 'bg-white border-[#efeeeb] text-secondary'
+                                    }`}>
+                                      {isPassed ? <FiCheckCircle size={10} /> : <span className="text-[8px] font-bold">{idx + 1}</span>}
+                                    </div>
+                                    <span className={`text-[8px] font-bold mt-1.5 uppercase tracking-wider transition-colors ${isCurrent ? 'text-primary' : isPassed ? 'text-secondary' : 'text-on-surface-variant/40'}`}>
+                                      {stepName}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Interactive Operations Quick-Actions */}
+                          <div className="flex flex-wrap gap-2.5 pt-4 border-t border-outline-variant/20">
+                            {job.status === 'pending' && (
+                              <button
+                                onClick={() => handleUpdateStatus(job._id, 'confirmed')}
+                                className="bg-gradient-primary text-on-primary font-label-md text-xs px-5 py-3 rounded-xl shadow-sm hover:translate-y-[-1px] active:scale-95 transition-all flex items-center gap-1.5 font-bold uppercase tracking-wider"
+                              >
+                                <FiCheckCircle size={14} /> Accept Dispatch
+                              </button>
+                            )}
+
+                            {job.status === 'confirmed' && (
+                              <button
+                                onClick={() => handleUpdateStatus(job._id, 'in_progress')}
+                                className="bg-gradient-primary text-on-primary font-label-md text-xs px-5 py-3 rounded-xl shadow-sm hover:translate-y-[-1px] active:scale-95 transition-all flex items-center gap-1.5 font-bold uppercase tracking-wider"
+                              >
+                                <FiClock size={14} /> Initiate Service
+                              </button>
+                            )}
+
+                            {job.status === 'in_progress' && (
+                              <button
+                                onClick={() => triggerPurityCertification(job)}
+                                className="bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-label-md text-xs px-5 py-3 rounded-xl shadow-md hover:shadow-lg hover:translate-y-[-1px] active:scale-95 transition-all flex items-center gap-1.5 font-bold uppercase tracking-wider"
+                              >
+                                <FiAward size={14} /> Certified Complete
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                setSelectedBooking(job);
+                                setShowDetailsModal(true);
+                              }}
+                              className="bg-white/60 hover:bg-white border border-outline-variant/30 text-primary font-label-md text-xs px-4 py-3 rounded-xl hover:translate-y-[-1px] active:scale-95 transition-all flex items-center gap-1 font-bold uppercase tracking-wider shadow-sm ml-auto"
+                            >
+                              Details <FiChevronRight size={14} />
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
+                </motion.div>
               )}
-            </button>
-            {/* Shift clock button */}
-            <button
-              onClick={handleClockInOut}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all shadow ${
-                isShiftActive 
-                  ? 'bg-red-50 text-red-600 border border-red-200' 
-                  : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-              }`}
+
+              {currentView === 'completed' && (
+                <motion.div
+                  key="completed"
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="space-y-6"
+                >
+                  {completedServices.length === 0 ? (
+                    <motion.div 
+                      variants={itemVariants}
+                      className="glass-card p-16 text-center border border-outline-variant/15 rounded-3xl"
+                    >
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-primary/20">
+                        <FiCheckCircle size={28} className="text-primary" />
+                      </div>
+                      <h3 className="text-primary font-bold text-lg font-headline-md mb-1">Archive is Empty</h3>
+                      <p className="text-on-surface-variant text-sm max-w-sm mx-auto leading-relaxed">
+                        Completed dispatches, customer reports, and filtration certificates will list in this panel.
+                      </p>
+                    </motion.div>
+                  ) : (
+                    completedServices.map((service) => {
+                      const customerName = service.customer?.firstName && service.customer?.lastName
+                        ? `${service.customer.firstName} ${service.customer.lastName}`
+                        : 'Customer';
+
+                      // Extract certificate if stored inside notes
+                      let certificationData = null;
+                      if (service.agentNotes && service.agentNotes.startsWith('[PURITY_CERTIFICATE]:')) {
+                        try {
+                          certificationData = JSON.parse(service.agentNotes.replace('[PURITY_CERTIFICATE]:', ''));
+                        } catch (e) {
+                          console.error('Failed to parse completed certificate data', e);
+                        }
+                      }
+
+                      return (
+                        <motion.div
+                          key={service._id}
+                          variants={itemVariants}
+                          className="glass-card border border-outline-variant/20 rounded-3xl p-6 shadow-sm border-l-4 border-l-emerald-600 relative overflow-hidden flex flex-col justify-between"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
+                            <div>
+                              <h3 className="text-lg font-bold text-primary capitalize font-headline-md">
+                                {service.serviceType?.replace(/_/g, ' ')}
+                              </h3>
+                              <p className="text-on-surface-variant/80 text-[11px] font-semibold mt-0.5">
+                                Verified on {new Date(service.completedAt || service.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 self-start">
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-full font-black text-[9px] tracking-wider uppercase">
+                                COMPLETED
+                              </span>
+                              {certificationData && (
+                                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full font-black text-[9px] tracking-wider uppercase flex items-center gap-1">
+                                  <FiAward size={10} /> Certified
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Customer info card */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#efeeeb]/30 rounded-2xl p-4 border border-outline-variant/10">
+                            <div>
+                              <span className="text-[9px] uppercase font-black tracking-wider text-secondary">Care Recipient</span>
+                              <p className="text-xs font-bold text-primary leading-none mt-1">{customerName}</p>
+                              <p className="text-on-surface-variant text-[10px] font-semibold mt-1.5">{service.customer?.email}</p>
+                            </div>
+                            {certificationData && (
+                              <div className="border-t md:border-t-0 md:border-l border-outline-variant/20 pt-3 md:pt-0 md:pl-4">
+                                <span className="text-[9px] uppercase font-black tracking-wider text-secondary">Calibrated Purity Metrics</span>
+                                <div className="grid grid-cols-2 gap-2 mt-1.5">
+                                  <div>
+                                    <span className="text-[8px] font-bold text-secondary uppercase block">Output TDS</span>
+                                    <span className="text-xs font-bold text-emerald-600">{certificationData.metrics?.tdsOutput} ppm</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] font-bold text-secondary uppercase block">pH Balance</span>
+                                    <span className="text-xs font-bold text-primary">{certificationData.metrics?.phLevel} pH</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {certificationData && (
+                            <button
+                              onClick={() => setGeneratedCertificate(certificationData)}
+                              className="mt-4 w-full flex items-center justify-center gap-2 text-primary hover:text-on-primary font-bold py-3 border border-primary/20 rounded-xl hover:bg-primary transition-all duration-300 font-label-md text-xs shadow-sm bg-white/40 uppercase tracking-wider"
+                            >
+                              <FiAward size={13} /> View Purification Certificate
+                            </button>
+                          )}
+                        </motion.div>
+                      );
+                    })
+                  )}
+                </motion.div>
+              )}
+
+              {currentView === 'notifications' && (
+                <motion.div
+                  key="notifications"
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="space-y-4"
+                >
+                  {notifications.length > 0 && (
+                    <div className="flex justify-between items-center mb-2">
+                      <p className="text-primary font-bold text-sm uppercase tracking-wider">
+                        Operational Alerts ({notifications.filter(n => !n.isRead).length} unread)
+                      </p>
+                      {notifications.some(n => !n.isRead) && (
+                        <button
+                          onClick={handleMarkAllAsRead}
+                          className="text-[10px] font-black uppercase tracking-wider text-primary hover:underline bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg hover:bg-primary/10 transition-all"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {notifications.length === 0 ? (
+                    <motion.div 
+                      variants={itemVariants}
+                      className="glass-card p-16 text-center border border-outline-variant/15 rounded-3xl"
+                    >
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-primary/20">
+                        <FiBellOff size={28} className="text-primary animate-pulse" />
+                      </div>
+                      <h3 className="text-primary font-bold text-lg font-headline-md mb-1">Clear Horizon</h3>
+                      <p className="text-on-surface-variant text-sm max-w-sm mx-auto leading-relaxed">
+                        No active operational alerts or customer dispatches in your feed at the moment.
+                      </p>
+                    </motion.div>
+                  ) : (
+                    notifications.map((notif, idx) => {
+                      const Icon = notif.type === 'new_assignment' 
+                        ? FiBell 
+                        : notif.type === 'status_update' 
+                        ? FiClock 
+                        : notif.type === 'alert' 
+                        ? FiAlertCircle 
+                        : FiInfo;
+
+                      return (
+                        <motion.div
+                          key={notif._id}
+                          variants={itemVariants}
+                          onClick={() => !notif.isRead && handleMarkAsRead(notif._id)}
+                          className={`glass-card p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer ${
+                            !notif.isRead
+                              ? 'bg-[#f3e2ac]/10 border-l-4 border-l-primary border-outline-variant/40 shadow-sm'
+                              : 'bg-white/40 border-outline-variant/20 hover:bg-white/60'
+                          }`}
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className={`p-3 rounded-xl border ${
+                              !notif.isRead 
+                                ? 'bg-primary/20 text-primary border-primary/30' 
+                                : 'bg-[#efeeeb]/60 text-secondary border-outline-variant/20'
+                            }`}>
+                              <Icon size={18} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className={`font-bold text-sm ${!notif.isRead ? 'text-primary' : 'text-on-surface'}`}>
+                                  {notif.title || 'System Alert'}
+                                </h4>
+                                {!notif.isRead && (
+                                  <span className="w-2 h-2 bg-primary rounded-full animate-ping" />
+                                )}
+                              </div>
+                              <p className="text-on-surface-variant text-xs mt-1 leading-relaxed max-w-2xl font-semibold">
+                                {notif.message}
+                              </p>
+                              <span className="text-[9px] text-on-surface-variant/70 font-semibold mt-2 inline-block">
+                                {new Date(notif.createdAt).toLocaleString('en-IN', {
+                                  dateStyle: 'medium',
+                                  timeStyle: 'short'
+                                })}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-end sm:self-center">
+                            {notif.relatedBooking && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!notif.isRead) {
+                                    handleMarkAsRead(notif._id);
+                                  }
+                                  handleViewJobDetails(notif.relatedBooking);
+                                }}
+                                className="bg-primary hover:bg-[#853a01] text-on-primary text-xs font-bold px-4 py-2 rounded-xl transition-all duration-300 shadow-sm hover:shadow-md flex items-center gap-1.5 whitespace-nowrap uppercase tracking-wider"
+                              >
+                                Inspect Job <FiChevronRight size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Remote Sessions Security Dashboard */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="glass-card p-6 md:p-8 rounded-3xl border border-outline-variant/30 mt-8"
             >
-              <FiPower size={11} />
-              {isShiftActive ? 'Clock Out' : 'Clock In'}
-            </button>
+              <SecurityDashboard />
+            </motion.div>
+          </div>
+
+          {/* RIGHT SIDEBAR: Agent Profile, Availability toggle, Active Map SVG, Live Metrics Widget */}
+          <div className="lg:col-span-1 space-y-8">
+            
+            {/* specialist live duty profile card */}
+            {profile && (
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="glass-card p-6 rounded-3xl border border-outline-variant/30 space-y-6 relative overflow-hidden"
+              >
+                {/* Visual accent backdrop glow */}
+                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-xl pointer-events-none"></div>
+
+                <div className="flex items-center gap-4 pb-4 border-b border-outline-variant/10">
+                  <div className="relative w-16 h-16 rounded-full border-2 border-white shadow bg-primary/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    {profile.profileImage ? (
+                      <img src={profile.profileImage} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-primary font-bold text-xl uppercase">
+                        {profile.firstName?.[0] || 'A'}{profile.lastName?.[0] || ''}
+                      </span>
+                    )}
+                    {/* Breathing available status dot */}
+                    <span className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${
+                      profile.status === 'available' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                    }`}></span>
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-primary text-lg font-headline-md truncate leading-tight">
+                      {profile.firstName} {profile.lastName}
+                    </h3>
+                    <p className="text-[10px] text-on-surface-variant font-black uppercase tracking-wider mt-1">Care Specialist</p>
+                  </div>
+                </div>
+
+                {/* Duty toggle switch */}
+                <div className="space-y-2">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-secondary block">Duty Mode Command</span>
+                  <div className="grid grid-cols-2 gap-1 p-1 bg-[#efeeeb]/60 rounded-2xl border border-outline-variant/10">
+                    {['available', 'offline'].map((statusOption) => {
+                      const isSelected = profile.status === statusOption;
+                      return (
+                        <button
+                          key={statusOption}
+                          type="button"
+                          onClick={() => handleToggleDutyStatus(statusOption)}
+                          disabled={isUpdatingStatus}
+                          className={`py-2 px-3 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-gradient-primary text-on-primary font-bold shadow-md'
+                              : 'text-on-surface-variant hover:text-primary'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            statusOption === 'available' ? 'bg-emerald-400' : 'bg-slate-400'
+                          } ${isSelected && statusOption === 'available' ? 'animate-ping' : ''}`}></span>
+                          {statusOption}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Quick Info Parameters */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex justify-between items-center bg-[#efeeeb]/30 border border-outline-variant/10 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-secondary">Specialist ID</span>
+                    <span className="text-xs font-bold text-primary tracking-wide font-mono">{profile.agentId}</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-[#efeeeb]/30 border border-outline-variant/10 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-secondary">Registered Phone</span>
+                    <span className="text-xs font-bold text-primary font-mono">{profile.phone}</span>
+                  </div>
+                </div>
+
+                {/* Quick edit settings button */}
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-white/60 hover:bg-primary hover:text-on-primary text-primary font-bold text-xs border border-primary/20 rounded-xl hover:translate-y-[-1px] active:scale-95 transition-all uppercase tracking-wider shadow-sm"
+                >
+                  <FiSettings size={14} /> Configure Workspace
+                </button>
+              </motion.div>
+            )}
+
+            {/* Premium Active Dispatch SVG Route Map Mockup */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="glass-card p-6 rounded-3xl border border-outline-variant/30 space-y-4 relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant/10">
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
+                  <FiMap size={13} className="text-primary" /> Active Service Radius Map
+                </span>
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 border border-emerald-100 rounded">
+                  GPS Live
+                </span>
+              </div>
+
+              {/* Graphic Dispatch Map SVG */}
+              <div className="relative h-44 rounded-2xl border border-outline-variant/20 overflow-hidden bg-slate-900 shadow-inner flex items-center justify-center">
+                {/* SVG Mockup */}
+                <svg className="w-full h-full object-cover opacity-60 pointer-events-none" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Grid Lines */}
+                  <path d="M0 40 H400 M0 80 H400 M0 120 H400 M0 160 H400" stroke="#1e293b" strokeWidth="0.5" />
+                  <path d="M80 0 V200 M160 0 V200 M240 0 V200 M320 0 V200" stroke="#1e293b" strokeWidth="0.5" />
+                  
+                  {/* Service Radius Outer Boundary */}
+                  <circle cx="200" cy="100" r="80" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
+                  <circle cx="200" cy="100" r="5" fill="#f59e0b" className="animate-ping" />
+                  <circle cx="200" cy="100" r="3" fill="#f59e0b" />
+
+                  {/* Route Paths */}
+                  <path d="M200 100 Q150 140 120 120 Q90 100 80 130" stroke="#0ea5e9" strokeWidth="2" strokeDasharray="4 4" className="animate-pulse" />
+                  <path d="M200 100 Q260 70 310 90 Q340 100 330 60" stroke="#10b981" strokeWidth="2" />
+
+                  {/* Nodes */}
+                  <circle cx="120" cy="120" r="4" fill="#0ea5e9" />
+                  <circle cx="310" cy="90" r="4" fill="#10b981" />
+                  <circle cx="330" cy="60" r="4" fill="#10b981" />
+
+                  {/* Route Labels */}
+                  <text x="210" y="95" fill="#f59e0b" fontSize="8" fontWeight="bold">HQ Command</text>
+                  <text x="70" y="145" fill="#0ea5e9" fontSize="8" fontWeight="bold">Active: Client A</text>
+                  <text x="280" y="105" fill="#10b981" fontSize="8" fontWeight="bold">Client B (Route Next)</text>
+                </svg>
+                
+                {/* Floating overlay readout */}
+                <div className="absolute bottom-3 left-3 right-3 bg-slate-950/80 backdrop-blur-md px-3.5 py-2 border border-slate-800 rounded-xl flex items-center justify-between text-white text-[9px] font-black uppercase tracking-wider shadow-md">
+                  <span>Duty Radius: {settingsData.travelRadius} km</span>
+                  <span className="text-emerald-400">HQ Sync Online</span>
+                </div>
+              </div>
+
+              <div className="text-center">
+                <p className="text-[10px] text-on-surface-variant/80 font-semibold leading-relaxed">
+                  Calculated active route dispatches optimized within a {settingsData.travelRadius} km travel perimeter. Use Google Maps inside job dispatches for turn-by-turn guidance.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Performance Analytics Widget */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+              className="glass-card p-6 rounded-3xl border border-outline-variant/30 space-y-5"
+            >
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5 pb-3 border-b border-outline-variant/10">
+                <FiTrendingUp size={13} className="text-primary" /> Specialist Performance Ratings
+              </span>
+
+              {/* Specialist statistics dials/bars */}
+              <div className="space-y-4">
+                {/* Average Customer Rating out of 5 */}
+                <div>
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-secondary mb-1.5">
+                    <span>Average Customer Rating</span>
+                    <span className="text-primary font-bold flex items-center gap-1">★ {profile?.rating?.toFixed(1) || '0.0'}/5.0</span>
+                  </div>
+                  <div className="h-2 bg-[#efeeeb] rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-primary rounded-full" style={{ width: `${((profile?.rating || 0) / 5) * 100}%` }}></div>
+                  </div>
+                </div>
+
+                {/* Service Success Rate */}
+                <div>
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-secondary mb-1.5">
+                    <span>Cleanliness Completion Rate</span>
+                    <span className="text-primary font-bold">100% Calibrated</span>
+                  </div>
+                  <div className="h-2 bg-[#efeeeb] rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-primary rounded-full" style={{ width: '100%' }}></div>
+                  </div>
+                </div>
+
+                {/* Total jobs dispatched */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="bg-[#efeeeb]/30 border border-outline-variant/10 p-3.5 rounded-2xl text-center">
+                    <span className="text-[8px] font-black uppercase tracking-wider text-secondary block">Assigned Queue</span>
+                    <span className="text-2xl font-black text-primary mt-1 block">{assignedJobs.length}</span>
+                  </div>
+                  <div className="bg-[#efeeeb]/30 border border-outline-variant/10 p-3.5 rounded-2xl text-center">
+                    <span className="text-[8px] font-black uppercase tracking-wider text-secondary block">Completed History</span>
+                    <span className="text-2xl font-black text-primary mt-1 block">{completedServices.length}</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
         </div>
+      </main>
 
-        {/* Dynamic content rendering depending on tab selections */}
-        <AnimatePresence mode="wait">
-          {activeTab === 'jobs' && (
+      <JobDetailsModal
+        isOpen={showDetailsModal}
+        onClose={() => setShowDetailsModal(false)}
+        job={selectedBooking}
+      />
+
+      {/* Water Purity Test Certification Slider/Gauge Modal */}
+      <AnimatePresence>
+        {showPurityModal && certifyingJob && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
             <motion.div
-              key="jobs"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-6"
-            >
-              {/* Shift status details when active */}
-              {isShiftActive && (
-                <div className="bg-gradient-primary text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none"></div>
-                  <div className="flex justify-between items-center border-b border-white/20 pb-4 mb-4">
-                    <div>
-                      <span className="text-[8px] font-bold uppercase tracking-widest text-[#dac2b6] block">SHIFT STATUS</span>
-                      <span className="text-sm font-semibold flex items-center gap-1.5 mt-1 text-emerald-400">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-                        Active Dispatch Duty
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[8px] font-bold uppercase tracking-widest text-[#dac2b6] block">DURATION</span>
-                      <span className="text-lg font-bold font-mono tracking-wide mt-1 block">{shiftDuration}</span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <span className="text-[8px] font-bold uppercase tracking-widest text-[#dac2b6] block">Dispatches Completed</span>
-                      <span className="text-lg font-bold mt-1 block">{earningsData.completedJobsCount} Jobs</span>
-                    </div>
-                    <div className="border-l border-white/20">
-                      <span className="text-[8px] font-bold uppercase tracking-widest text-[#dac2b6] block">Earnings Today</span>
-                      <span className="text-lg font-bold mt-1 block">₹{earningsData.todayEarnings}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPurityModal(false)}
+              className="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm"
+            />
 
-              {/* Offline shift barrier */}
-              {!isShiftActive ? (
-                <div className="glass-card p-12 text-center rounded-3xl border border-outline-variant/20 shadow-lg">
-                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-primary/20">
-                    <FiSliders size={28} className="text-primary" />
-                  </div>
-                  <h3 className="text-primary font-bold text-lg font-headline-md mb-2">Technician Offline</h3>
-                  <p className="text-on-surface-variant text-xs max-w-xs mx-auto leading-relaxed mb-6">
-                    Clock in for your shift to connect to the routing engine, download GPS logs, and receive real-time customer dispatches.
-                  </p>
-                  <button
-                    onClick={handleClockInOut}
-                    className="bg-gradient-primary text-white w-full py-3.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow-md active:scale-95"
-                  >
-                    Go Online Check-In
-                  </button>
+            {/* Modal Container */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', duration: 0.5 }}
+              className="relative z-10 w-full max-w-2xl bg-[#faf9f6]/95 backdrop-blur-2xl border border-white/50 rounded-3xl p-8 shadow-2xl overflow-y-auto max-h-[90vh]"
+            >
+              <div className="flex justify-between items-center mb-6 pb-4 border-b border-outline-variant/20">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1">
+                    <FiShield size={11} className="text-primary animate-pulse" /> Calibration Command
+                  </span>
+                  <h3 className="text-2xl font-black text-primary font-headline-md tracking-tight mt-0.5">
+                    FilterNest Purity Certification
+                  </h3>
                 </div>
-              ) : activeJob ? (
-                // Active Service Order layout
-                <div className="glass-card border border-outline-variant/30 rounded-3xl p-5 shadow-lg relative overflow-hidden space-y-5">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-500"></div>
+                <button
+                  onClick={() => setShowPurityModal(false)}
+                  className="text-on-surface-variant hover:text-primary transition-colors text-xl font-bold focus:outline-none"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCompleteWithCertificate} className="space-y-6">
+                
+                {/* Alert Warning */}
+                <div className="bg-[#efeeeb]/60 border border-outline-variant/20 p-4 rounded-2xl flex items-start gap-3">
+                  <FiAward className="text-primary mt-0.5 flex-shrink-0" size={18} />
+                  <p className="text-xs text-on-surface-variant font-semibold leading-relaxed">
+                    You are completing the service request for booking ID <span className="font-bold text-primary">{certifyingJob.bookingId}</span>. Calibrate and log the professional filtration metrics below to certify this purifier system.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   
-                  <div className="flex justify-between items-start pl-2">
+                  {/* Calibrate TDS parameters */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-secondary pb-1 border-b border-outline-variant/10 flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary"></span> Calibrate TDS Levels (ppm)
+                    </h4>
+                    
+                    {/* TDS Input (Raw Water) */}
                     <div>
-                      <span className="bg-orange-50 text-orange-600 border border-orange-100 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest">
-                        Active Service Dispatch
-                      </span>
-                      <h3 className="text-lg font-bold text-primary mt-1.5 capitalize font-headline-md">
-                        {activeJob.serviceType?.replace(/_/g, ' ')}
-                      </h3>
-                      <p className="text-[10px] text-on-surface-variant/80 font-bold mt-1">ID: {activeJob.bookingId}</p>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-semibold text-primary">Raw Water TDS Input</label>
+                        <span className="text-xs font-bold text-secondary font-mono">{purityData.tdsInput} ppm</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="150"
+                        max="500"
+                        value={purityData.tdsInput}
+                        onChange={(e) => setPurityData(prev => ({ ...prev, tdsInput: parseInt(e.target.value) }))}
+                        className="w-full h-1 bg-[#efeeeb] rounded-lg appearance-none cursor-pointer accent-primary border border-outline-variant/10"
+                      />
                     </div>
-                    <span className="text-xs font-bold text-primary bg-secondary-container px-3 py-1.5 rounded-full">
-                      ₹{activeJob.cost?.totalCost || 1500}
+
+                    {/* TDS Output (Filtered Water) */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-semibold text-primary">Filtered TDS Output (Target: &lt;50)</label>
+                        <span className="text-xs font-bold text-emerald-600 font-mono">{purityData.tdsOutput} ppm</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="5"
+                        max="80"
+                        value={purityData.tdsOutput}
+                        onChange={(e) => setPurityData(prev => ({ ...prev, tdsOutput: parseInt(e.target.value) }))}
+                        className="w-full h-1 bg-[#efeeeb] rounded-lg appearance-none cursor-pointer accent-emerald-500 border border-outline-variant/10"
+                      />
+                    </div>
+
+                    {/* Purification Rate Calculation Preview */}
+                    <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-2xl text-center">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-emerald-800 block">System Purification Rate</span>
+                      <span className="text-xl font-black text-emerald-600 mt-1 block">
+                        {Math.round(((purityData.tdsInput - purityData.tdsOutput) / purityData.tdsInput) * 100)}% Purity Alignment
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Calibrate pH Parameters */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-secondary pb-1 border-b border-outline-variant/10 flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary"></span> Calibrate pH Balance
+                    </h4>
+
+                    {/* pH Level Slider */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-semibold text-primary">Calibrated pH Balance</label>
+                        <span className="text-xs font-bold text-primary font-mono">{purityData.phLevel} pH</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="6.0"
+                        max="9.0"
+                        step="0.1"
+                        value={purityData.phLevel}
+                        onChange={(e) => setPurityData(prev => ({ ...prev, phLevel: parseFloat(e.target.value) }))}
+                        className="w-full h-1 bg-[#efeeeb] rounded-lg appearance-none cursor-pointer accent-primary border border-outline-variant/10"
+                      />
+                      <div className="flex justify-between text-[8px] text-on-surface-variant/50 font-bold mt-1 uppercase tracking-wider">
+                        <span>Acidic (6.0)</span>
+                        <span className="text-emerald-600">Neutral (7.0 - 7.5)</span>
+                        <span>Alkaline (9.0)</span>
+                      </div>
+                    </div>
+
+                    {/* pH status indicator */}
+                    <div className={`p-3.5 border rounded-2xl text-center font-bold text-xs ${getPhStatus(purityData.phLevel).color}`}>
+                      <span className="text-[8px] uppercase tracking-wider block mb-0.5">Evaluated pH Index</span>
+                      {getPhStatus(purityData.phLevel).label}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter Cartridges calibration dials */}
+                <div className="space-y-4 pt-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-secondary pb-1 border-b border-outline-variant/10 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary"></span> Cartridge Health Calibration (%)
+                  </h4>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-primary mb-1">Sediment Filter</label>
+                      <input
+                        type="number"
+                        min="50"
+                        max="100"
+                        value={purityData.sedimentHealth}
+                        onChange={(e) => setPurityData(prev => ({ ...prev, sedimentHealth: parseInt(e.target.value) }))}
+                        className="w-full px-3 py-2 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-primary mb-1">Active Carbon</label>
+                      <input
+                        type="number"
+                        min="50"
+                        max="100"
+                        value={purityData.carbonHealth}
+                        onChange={(e) => setPurityData(prev => ({ ...prev, carbonHealth: parseInt(e.target.value) }))}
+                        className="w-full px-3 py-2 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-primary mb-1">RO Membrane</label>
+                      <input
+                        type="number"
+                        min="50"
+                        max="100"
+                        value={purityData.membraneHealth}
+                        onChange={(e) => setPurityData(prev => ({ ...prev, membraneHealth: parseInt(e.target.value) }))}
+                        className="w-full px-3 py-2 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-primary mb-1">Specialist Remarks</label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={purityData.remarks}
+                    onChange={(e) => setPurityData(prev => ({ ...prev, remarks: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border border-outline rounded-2xl text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-semibold leading-relaxed"
+                  />
+                </div>
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-label-md text-xs py-4 rounded-xl shadow-md hover:shadow-lg hover:translate-y-[-1px] active:scale-95 transition-all font-bold uppercase tracking-wider"
+                >
+                  Confirm calibration & complete service
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Printable Gold-Accented Certificate View Modal */}
+      <AnimatePresence>
+        {generatedCertificate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setGeneratedCertificate(null)}
+              className="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm"
+            />
+
+            {/* Modal Container */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative z-10 w-full max-w-xl bg-white rounded-3xl p-1 shadow-2xl overflow-y-auto max-h-[90vh]"
+            >
+              
+              {/* Gold borders certificate layout wrapper */}
+              <div 
+                ref={certificateRef}
+                className="bg-[#faf9f6] border-[10px] border-double border-[#d4af37] rounded-[22px] p-8 space-y-6 relative overflow-hidden"
+              >
+                {/* Watermark branding */}
+                <div className="absolute inset-0 opacity-5 flex items-center justify-center pointer-events-none select-none">
+                  <span className="text-primary font-black font-headline-xl text-7xl tracking-widest uppercase">FILTERNEST</span>
+                </div>
+
+                {/* Certificate Branding Header */}
+                <div className="text-center space-y-1">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-[#8b4513] block">Official Purification Record</span>
+                  <h2 className="text-[#8b4513] font-bold text-2xl font-headline-md tracking-tight uppercase">Certificate of Purity Calibration</h2>
+                  <div className="w-16 h-0.5 bg-[#d4af37] mx-auto mt-2"></div>
+                </div>
+
+                <div className="space-y-4 text-center text-xs text-on-surface-variant font-semibold">
+                  <p className="leading-relaxed">
+                    This document certifies that the residential filtration system assigned under service type <span className="font-bold text-primary">{generatedCertificate.jobType}</span> for customer <span className="font-bold text-primary">{generatedCertificate.customer}</span> has been professionally calibrated, sanitized, and authenticated by FilterNest Specialist team.
+                  </p>
+                </div>
+
+                {/* Metrics Table Grid */}
+                <div className="border border-outline-variant/30 rounded-2xl overflow-hidden bg-white/70 backdrop-blur-sm shadow-sm pl-0">
+                  <div className="grid grid-cols-2 bg-[#efeeeb]/30 border-b border-outline-variant/20 p-3.5 text-center">
+                    <div>
+                      <span className="text-[8px] font-bold text-secondary uppercase block">Raw Water Input TDS</span>
+                      <span className="text-sm font-bold text-primary font-mono">{generatedCertificate.metrics?.tdsInput} ppm</span>
+                    </div>
+                    <div className="border-l border-outline-variant/20">
+                      <span className="text-[8px] font-bold text-secondary uppercase block">Calibrated Output TDS</span>
+                      <span className="text-sm font-bold text-emerald-600 font-mono">{generatedCertificate.metrics?.tdsOutput} ppm</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 p-3.5 text-center text-xs">
+                    <div>
+                      <span className="text-[8px] font-bold text-secondary uppercase block">pH Balance</span>
+                      <span className="text-xs font-bold text-primary font-mono mt-0.5 block">{generatedCertificate.metrics?.phLevel} pH</span>
+                    </div>
+                    <div className="border-l border-outline-variant/20">
+                      <span className="text-[8px] font-bold text-secondary uppercase block">Purification Efficiency</span>
+                      <span className="text-xs font-bold text-emerald-600 font-mono mt-0.5 block">{generatedCertificate.metrics?.purificationRate}%</span>
+                    </div>
+                    <div className="border-l border-outline-variant/20">
+                      <span className="text-[8px] font-bold text-secondary uppercase block">Membrane Integrity</span>
+                      <span className="text-xs font-bold text-primary font-mono mt-0.5 block">{generatedCertificate.metrics?.membraneHealth}% Health</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter state badges */}
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-center">
+                    <span className="text-[7px] font-bold text-emerald-800 uppercase block">Sediment Cleanliness</span>
+                    <span className="text-xs font-black text-emerald-600 font-mono block mt-0.5">{generatedCertificate.metrics?.sedimentHealth}%</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-center">
+                    <span className="text-[7px] font-bold text-emerald-800 uppercase block">Active Carbon</span>
+                    <span className="text-xs font-black text-emerald-600 font-mono block mt-0.5">{generatedCertificate.metrics?.carbonHealth}%</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-center">
+                    <span className="text-[7px] font-bold text-emerald-800 uppercase block">RO Membrane</span>
+                    <span className="text-xs font-black text-emerald-600 font-mono block mt-0.5">{generatedCertificate.metrics?.membraneHealth}%</span>
+                  </div>
+                </div>
+
+                {/* Specialist remarks details */}
+                <div className="bg-white/40 p-4 border border-outline-variant/20 rounded-2xl text-center">
+                  <span className="text-[8px] font-bold text-secondary uppercase block">Official Remarks</span>
+                  <p className="text-[10px] text-on-surface-variant font-semibold leading-relaxed mt-1 italic">
+                    "{generatedCertificate.remarks}"
+                  </p>
+                </div>
+
+                {/* Credentials & stamp footprint */}
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-outline-variant/20 text-xs">
+                  <div>
+                    <span className="text-[8px] font-bold text-secondary uppercase block">Calibrated Specialist</span>
+                    <span className="font-bold text-primary mt-1 block">{generatedCertificate.specialist}</span>
+                    <span className="text-[9px] text-on-surface-variant/80 font-semibold block">Care Specialist ID: {generatedCertificate.specialistId}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[8px] font-bold text-secondary uppercase block">Verification Seal</span>
+                    <span className="text-[10px] font-bold text-[#8b4513] font-mono mt-1 block uppercase tracking-wide">{generatedCertificate.certId}</span>
+                    <span className="text-[8px] font-bold text-secondary uppercase block mt-1">Signature Authorization</span>
+                    <span className="text-[10px] font-black text-primary font-mono tracking-widest block uppercase mt-0.5">{generatedCertificate.signatureCode}</span>
+                  </div>
+                </div>
+
+                {/* Brand watermark Footer */}
+                <div className="text-center pt-2">
+                  <p className="text-[9px] font-black text-primary uppercase tracking-widest">FilterNest Smart Water Sanctuary</p>
+                </div>
+              </div>
+
+              {/* Operations Action Bar */}
+              <div className="bg-[#efeeeb] p-4 flex gap-3 justify-end rounded-b-3xl">
+                <button
+                  onClick={() => {
+                    const printContent = certificateRef.current.innerHTML;
+                    const originalContent = document.body.innerHTML;
+                    const styleBlock = `
+                      <style>
+                        body { background: white !important; font-family: system-ui, -apple-system, sans-serif; p: 20px; }
+                        #print-frame { max-width: 600px; margin: 40px auto; border: 10px double #d4af37; border-radius: 22px; padding: 30px; background: #faf9f6; }
+                        h2 { color: #8b4513; text-align: center; margin-bottom: 20px; }
+                        .text-center { text-align: center; }
+                        .w-16 { width: 64px; }
+                        .h-0.5 { height: 2px; }
+                        .bg-gold { background: #d4af37; }
+                        .mx-auto { margin-left: auto; margin-right: auto; }
+                        .mt-2 { margin-top: 8px; }
+                        .mb-6 { margin-bottom: 24px; }
+                        .space-y-6 > * + * { margin-top: 24px; }
+                        .grid { display: grid; }
+                        .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                        .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+                        .border { border: 1px solid #e2e8f0; }
+                        .rounded-2xl { border-radius: 16px; }
+                        .rounded-xl { border-radius: 12px; }
+                        .p-3\\.5 { padding: 14px; }
+                        .p-4 { padding: 16px; }
+                        .bg-white { background: white; }
+                        .font-bold { font-weight: bold; }
+                        .font-black { font-weight: 900; }
+                        .font-mono { font-family: monospace; }
+                        .text-xs { font-size: 12px; }
+                        .text-sm { font-size: 14px; }
+                        .text-lg { font-size: 18px; }
+                        .text-emerald-600 { color: #059669; }
+                        .bg-emerald-50 { background: #ecfdf5; }
+                        .border-emerald-100 { border-color: #d1fae5; }
+                        .text-slate-500 { color: #64748b; }
+                        .uppercase { text-transform: uppercase; }
+                        .tracking-wider { letter-spacing: 0.05em; }
+                        .tracking-widest { letter-spacing: 0.1em; }
+                        .italic { font-style: italic; }
+                        .pt-4 { padding-top: 16px; }
+                        .border-t { border-top: 1px solid #e2e8f0; }
+                        .text-right { text-align: right; }
+                        .flex-shrink-0 { flex-shrink: 0; }
+                        .bg-white\\/40 { background: rgba(255, 255, 255, 0.4); }
+                      </style>
+                    `;
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(`
+                      <html>
+                        <head>
+                          <title>FilterNest Water Purity Calibration Certificate</title>
+                          ${styleBlock}
+                        </head>
+                        <body>
+                          <div id="print-frame">
+                            ${printContent}
+                          </div>
+                          <script>
+                            window.onload = function() {
+                              window.print();
+                              window.close();
+                            }
+                          </script>
+                        </body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                  }}
+                  className="bg-primary hover:bg-[#853a01] text-on-primary font-bold text-xs px-5 py-3 rounded-xl shadow transition-all flex items-center gap-1.5 uppercase tracking-wider"
+                >
+                  <FiPrinter size={13} /> Print Certificate
+                </button>
+                <button
+                  onClick={() => setGeneratedCertificate(null)}
+                  className="bg-white hover:bg-gray-50 border border-outline-variant/30 text-primary font-bold text-xs px-5 py-3 rounded-xl transition-all uppercase tracking-wider"
+                >
+                  Close Record
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Settings Modal Config Tray */}
+      <AnimatePresence>
+        {showSettingsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', duration: 0.5 }}
+              className="relative z-10 w-full max-w-md bg-[#faf9f6]/95 backdrop-blur-2xl border border-white/50 rounded-3xl p-8 shadow-2xl overflow-y-auto max-h-[90vh]"
+            >
+              <div className="flex justify-between items-center mb-6 pb-4 border-b border-outline-variant/20">
+                <h3 className="text-2xl font-bold text-primary font-headline-md flex items-center gap-2">
+                  <FiSettings className="text-primary" /> Specialist Settings
+                </h3>
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="text-on-surface-variant hover:text-primary transition-colors text-xl font-semibold focus:outline-none"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveSettings} className="space-y-6">
+                {/* Availability Status */}
+                <div>
+                  <label className="block text-[10px] font-black text-secondary uppercase tracking-wider mb-3">
+                    Availability Duty Mode
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#efeeeb]/60 rounded-2xl border border-outline-variant/10">
+                    {['available', 'offline'].map((statusOption) => {
+                      const isSelected = settingsData.status === statusOption;
+                      return (
+                        <button
+                          key={statusOption}
+                          type="button"
+                          onClick={() => setSettingsData(prev => ({ ...prev, status: statusOption }))}
+                          className={`py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all duration-300 capitalize ${
+                            isSelected
+                              ? 'bg-gradient-primary text-on-primary font-bold shadow-md'
+                              : 'text-on-surface-variant hover:text-primary'
+                          }`}
+                        >
+                          {statusOption}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Personal Details */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-secondary uppercase tracking-wider pb-1 border-b border-outline-variant/10">
+                    Personal Details
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">First Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={settingsData.firstName}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, firstName: e.target.value }))}
+                        className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">Last Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={settingsData.lastName}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, lastName: e.target.value }))}
+                        className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">Mobile Coordinates</label>
+                    <input
+                      type="tel"
+                      required
+                      value={settingsData.phone}
+                      onChange={(e) => setSettingsData(prev => ({ ...prev, phone: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Service Address */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-secondary uppercase tracking-wider pb-1 border-b border-outline-variant/10">
+                    Dispatch Base Address
+                  </h4>
+                  <div>
+                    <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">Street Base</label>
+                    <input
+                      type="text"
+                      value={settingsData.address.street}
+                      onChange={(e) => setSettingsData(prev => ({ ...prev, address: { ...prev.address, street: e.target.value } }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">City</label>
+                      <input
+                        type="text"
+                        value={settingsData.address.city}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, address: { ...prev.address, city: e.target.value } }))}
+                        className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">State</label>
+                      <input
+                        type="text"
+                        value={settingsData.address.state}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, address: { ...prev.address, state: e.target.value } }))}
+                        className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">Pincode</label>
+                    <input
+                      type="text"
+                      value={settingsData.address.pincode}
+                      onChange={(e) => setSettingsData(prev => ({ ...prev, address: { ...prev.address, pincode: e.target.value } }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-outline rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Travel Radius Slider */}
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-[10px] font-black text-secondary uppercase tracking-wider">
+                      Duty Radius Perimeter
+                    </label>
+                    <span className="text-primary font-bold text-xs bg-primary/10 px-2.5 py-0.5 rounded-full">
+                      {settingsData.travelRadius} km
                     </span>
                   </div>
-
-                  {/* Distance estimation & Call button */}
-                  <div className="bg-[#efeeeb]/40 border border-outline-variant/20 rounded-2xl p-3 flex justify-between items-center pl-4">
-                    <div className="flex items-center gap-2">
-                      <FiNavigation className="text-primary animate-pulse" size={16} />
-                      <div>
-                        <span className="text-[7px] font-bold text-secondary uppercase block">Perimeter Distance</span>
-                        <span className="text-xs font-bold text-primary">{getDistanceToJob()} Away</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <a 
-                        href={`tel:${activeJob.customer?.phone}`}
-                        className="p-2.5 bg-white border border-outline-variant/30 rounded-xl hover:scale-105 transition-all text-primary"
-                      >
-                        <FiPhone size={14} />
-                      </a>
-                      <a 
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${activeJob.serviceLocation?.coordinates?.[1]},${activeJob.serviceLocation?.coordinates?.[0]}`}
-                        target="_blank"
-                        className="p-2.5 bg-primary text-white rounded-xl hover:scale-105 transition-all"
-                      >
-                        <FiMapPin size={14} />
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Leaflet Navigation Map card */}
-                  <div className="relative rounded-2xl overflow-hidden border border-outline-variant/20 h-44 shadow-inner">
-                    <div ref={mapRef} className="w-full h-full z-0" />
-                    <div className="absolute bottom-2.5 left-2.5 right-2.5 bg-slate-950/80 backdrop-blur px-3 py-1.5 rounded-xl flex items-center justify-between text-white text-[8px] font-bold uppercase tracking-wider z-10 shadow-md">
-                      <span>Address: {activeJob.serviceLocation?.address?.street}</span>
-                    </div>
-                  </div>
-
-                  {/* Timeline Workflow Stage buttons */}
-                  <div className="space-y-3">
-                    <span className="text-[8px] font-bold text-secondary uppercase tracking-widest block">TRANSITION STAGE</span>
-                    
-                    {activeJob.status === 'accepted' && (
-                      <button
-                        onClick={() => handleStatusTransition('travelling')}
-                        className="bg-primary text-white w-full py-3.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow flex items-center justify-center gap-1.5 active:scale-95"
-                      >
-                        <FiNavigation size={13} /> Initiate Travel (On The Way)
-                      </button>
-                    )}
-
-                    {activeJob.status === 'travelling' && (
-                      <button
-                        onClick={() => handleStatusTransition('arrived')}
-                        className="bg-primary text-white w-full py-3.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow flex items-center justify-center gap-1.5 active:scale-95"
-                      >
-                        <FiMapPin size={13} /> Log Arrived at Customer Site
-                      </button>
-                    )}
-
-                    {activeJob.status === 'arrived' && (
-                      <button
-                        onClick={() => handleStatusTransition('started')}
-                        className="bg-gradient-to-r from-orange-600 to-amber-500 text-white w-full py-3.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow flex items-center justify-center gap-1.5 active:scale-95"
-                      >
-                        <FiPlay size={13} /> Start Sanitization Service
-                      </button>
-                    )}
-
-                    {activeJob.status === 'started' && (
-                      <button
-                        onClick={() => setShowCompleteModal(true)}
-                        className="bg-gradient-to-r from-emerald-600 to-teal-500 text-white w-full py-3.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow flex items-center justify-center gap-1.5 active:scale-95 animate-pulse"
-                      >
-                        <FiAward size={13} /> Complete Service & Authenticate
-                      </button>
-                    )}
-
-                    {/* Standard emergency reject button inside active task */}
-                    <button
-                      onClick={() => setShowRejectModal(true)}
-                      className="bg-white hover:bg-red-50 text-red-600 border border-red-200 w-full py-3 rounded-xl font-semibold uppercase text-[9px] tracking-wider transition-all mt-1"
-                    >
-                      Emergency Decline / Reassign Job
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                // Queue fully clear screen
-                <div className="glass-card p-12 text-center rounded-3xl border border-outline-variant/15 shadow shadow-slate-100">
-                  <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
-                    <FiSliders size={22} className="text-primary animate-pulse" />
-                  </div>
-                  <h3 className="text-primary font-bold text-sm uppercase tracking-wider mb-1">Scanning Dispatches</h3>
-                  <p className="text-on-surface-variant text-[11px] max-w-xs mx-auto leading-relaxed">
-                    Routing engine scanning for water purification services in your {settingsData.travelRadius} km perimeter...
-                  </p>
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* TAB 2: Earnings Dashboard */}
-          {activeTab === 'earnings' && (
-            <motion.div
-              key="earnings"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-6"
-            >
-              {/* Gold glass payout card */}
-              <div className="bg-gradient-to-br from-[#6c2f00] to-[#8b4513] text-white p-6 rounded-3xl shadow-lg relative overflow-hidden border border-[#d4af37]/30">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
-                <span className="text-[8px] font-bold uppercase tracking-widest text-[#dac2b6] block">Withdrawable Payout Wallet</span>
-                <div className="flex justify-between items-end mt-2">
-                  <h2 className="text-3xl font-bold tracking-tight">₹{earningsData.balance}</h2>
-                  <button 
-                    onClick={() => setShowWithdrawModal(true)}
-                    className="bg-[#f3e2ac] hover:bg-white text-primary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow active:scale-95"
-                  >
-                    Cash-Out Now
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4 mt-4 text-center">
-                  <div>
-                    <span className="text-[7px] font-bold text-[#dac2b6] uppercase block">This Week Earnings</span>
-                    <span className="text-sm font-bold mt-0.5 block">₹{earningsData.weeklyEarnings}</span>
-                  </div>
-                  <div className="border-l border-white/10">
-                    <span className="text-[7px] font-bold text-[#dac2b6] uppercase block">Incentives Earned</span>
-                    <span className="text-sm font-bold mt-0.5 block">₹{earningsData.incentives}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Area graph metrics */}
-              <div className="glass-card p-5 border border-outline-variant/30 rounded-3xl shadow shadow-slate-100">
-                <span className="text-[9px] font-bold text-primary uppercase tracking-widest block mb-4">Earnings History Trend</span>
-                <div className="h-44 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart 
-                      data={earningsData.transactions.filter(t => t.type !== 'withdrawal').slice(-7).reverse()} 
-                      margin={{ top: 5, right: 5, left: -25, bottom: 0 }}
-                    >
-                      <XAxis dataKey="createdAt" tickFormatter={(str) => new Date(str).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })} fontSize={8} stroke="#877369" />
-                      <YAxis fontSize={8} stroke="#877369" />
-                      <Tooltip formatter={(value) => [`₹${value}`, 'Earned']} labelFormatter={(label) => new Date(label).toLocaleString()} />
-                      <Area type="monotone" dataKey="amount" stroke="#8b4513" fillOpacity={0.15} fill="url(#colorEarnings)" />
-                      <defs>
-                        <linearGradient id="colorEarnings" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#8b4513" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#8b4513" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Transaction history logs list */}
-              <div className="space-y-3">
-                <span className="text-[9px] font-bold text-secondary uppercase tracking-widest block">Wallet Transaction Logs</span>
-                
-                {earningsData.transactions.length === 0 ? (
-                  <p className="text-center text-xs text-on-surface-variant py-4 font-semibold">No transactions recorded yet.</p>
-                ) : (
-                  earningsData.transactions.map((tx) => (
-                    <div 
-                      key={tx._id} 
-                      className="bg-white border border-outline-variant/20 rounded-2xl p-4 flex justify-between items-center shadow-sm"
-                    >
-                      <div>
-                        <h4 className="text-xs font-bold text-primary capitalize leading-tight">{tx.type} Log</h4>
-                        <span className="text-[9px] text-on-surface-variant font-semibold mt-1 inline-block">
-                          {new Date(tx.createdAt || tx.date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                        </span>
-                        <p className="text-[9px] text-on-surface-variant/80 font-bold mt-0.5 truncate max-w-xs">{tx.description}</p>
-                      </div>
-                      <span className={`text-xs font-bold ${tx.type === 'withdrawal' ? 'text-red-600' : 'text-emerald-600'}`}>
-                        {tx.type === 'withdrawal' ? '-' : '+'}₹{Math.abs(tx.amount)}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* TAB 3: Performance Metrics & Streaks Heatmap */}
-          {activeTab === 'performance' && (
-            <motion.div
-              key="performance"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-6"
-            >
-              {/* Core rating summary scorecards */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white border border-outline-variant/30 p-5 rounded-3xl text-center shadow-sm">
-                  <span className="text-[8px] font-black text-secondary uppercase tracking-widest block">Rating Metric</span>
-                  <span className="text-2xl font-black text-primary mt-2 block flex items-center justify-center gap-1">
-                    ★ {profile?.rating?.toFixed(1) || '4.9'}
-                  </span>
-                  <span className="text-[8px] text-on-surface-variant/70 font-semibold mt-1 block">Based on {profile?.totalRatings || 24} ratings</span>
-                </div>
-                <div className="bg-white border border-outline-variant/30 p-5 rounded-3xl text-center shadow-sm">
-                  <span className="text-[8px] font-black text-secondary uppercase tracking-widest block">Punctuality Score</span>
-                  <span className="text-2xl font-black text-primary mt-2 block">98%</span>
-                  <span className="text-[8px] text-on-surface-variant/70 font-semibold mt-1 block">Late pings strictly log checked</span>
-                </div>
-              </div>
-
-              {/* GitHub style streak heatmap visualization */}
-              <div className="glass-card p-5 border border-outline-variant/30 rounded-3xl shadow shadow-slate-100">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-[9px] font-bold text-primary uppercase tracking-widest">Attendance Streak Heatmap</span>
-                  <span className="text-[8px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-0.5 border border-emerald-100 rounded">
-                    Active Streak: 8 days
-                  </span>
-                </div>
-                
-                {/* 10 x 6 styled date grids represent streak calendar */}
-                <div className="grid grid-cols-10 gap-1.5 py-1 justify-items-center">
-                  {getHeatmapGridDates().map((dtString, idx) => {
-                    const record = attendanceHeatmap[dtString];
-                    const hoursWorked = record?.workingHours || 0;
-                    
-                    // Determine grid shading based on hours
-                    let gridColor = 'bg-gray-100'; // offline
-                    if (record) {
-                      if (hoursWorked >= 8) gridColor = 'bg-emerald-700 shadow-sm border border-emerald-800'; // High work
-                      else if (hoursWorked > 4) gridColor = 'bg-emerald-500 border border-emerald-600'; // Medium work
-                      else gridColor = 'bg-emerald-200 border border-emerald-300'; // Present but low hours
-                    }
-
-                    return (
-                      <div 
-                        key={idx}
-                        className={`w-7 h-7 rounded-md cursor-pointer transition-all duration-300 hover:scale-110 flex items-center justify-center text-[7px] font-black text-white/95 font-mono ${gridColor}`}
-                        title={`${new Date(dtString).toLocaleDateString()}: ${record ? `${hoursWorked} hrs (${record.status})` : 'Offline'}`}
-                      >
-                        {new Date(dtString).getDate()}
-                      </div>
-                    );
-                  })}
-                </div>
-                
-                {/* Scale hints */}
-                <div className="flex justify-end gap-1.5 items-center text-[7px] font-bold uppercase tracking-wider text-secondary mt-3">
-                  <span>Offline</span>
-                  <span className="w-2.5 h-2.5 rounded bg-gray-100 border" />
-                  <span className="w-2.5 h-2.5 rounded bg-emerald-200 border" />
-                  <span className="w-2.5 h-2.5 rounded bg-emerald-500 border" />
-                  <span className="w-2.5 h-2.5 rounded bg-emerald-700 border" />
-                  <span>Elite Streak</span>
-                </div>
-              </div>
-
-              {/* Quick feedback list */}
-              <div className="space-y-3">
-                <span className="text-[9px] font-bold text-secondary uppercase tracking-widest block">Recent Client Reviews</span>
-                <div className="bg-white border border-outline-variant/20 rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-center gap-1.5 text-amber-500 mb-1">
-                    <FiStar size={12} fill="currentColor" />
-                    <FiStar size={12} fill="currentColor" />
-                    <FiStar size={12} fill="currentColor" />
-                    <FiStar size={12} fill="currentColor" />
-                    <FiStar size={12} fill="currentColor" />
-                    <span className="text-[9px] text-secondary font-black ml-1 uppercase">Sidharth Sen</span>
-                  </div>
-                  <p className="text-[11px] text-on-surface-variant font-semibold leading-relaxed">
-                    "Specialist checked our membrane output and calibrated pH. The TDS was 280 and is now 14. Unbelievable precision."
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* TAB 4: Profile Settings Config */}
-          {activeTab === 'profile' && (
-            <motion.div
-              key="profile"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-6"
-            >
-              {/* Duty toggle card */}
-              <div className="bg-white border border-outline-variant/30 p-5 rounded-3xl shadow-sm space-y-4">
-                <div>
-                  <span className="text-[8px] font-black text-secondary uppercase tracking-widest block">Specialist ID Card</span>
-                  <h3 className="font-bold text-primary text-base font-headline-md mt-1 truncate capitalize">
-                    {profile?.firstName} {profile?.lastName}
-                  </h3>
-                  <span className="text-[9px] text-[#8b4513] font-mono tracking-widest block uppercase mt-0.5">ID: {profile?.agentId}</span>
-                </div>
-                
-                {/* Active Availability Switch */}
-                <div className="flex justify-between items-center border-t border-outline-variant/10 pt-3">
-                  <div>
-                    <span className="text-xs font-bold text-primary block leading-none">Command Duty State</span>
-                    <span className="text-[9px] text-on-surface-variant font-semibold mt-0.5 inline-block">Realtime alerts depend on this status</span>
-                  </div>
-                  <div className="flex gap-1.5 p-1 bg-[#efeeeb] rounded-xl">
-                    {['available', 'offline'].map((st) => (
-                      <button
-                        key={st}
-                        onClick={async () => {
-                          await agentService.updateStatus(st);
-                          setProfile(prev => ({ ...prev, status: st }));
-                          setSettingsData(prev => ({ ...prev, status: st }));
-                          toast.success(`Duty status updated to ${st}`);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all ${
-                          profile?.status === st 
-                            ? 'bg-[#8b4513] text-white shadow-sm' 
-                            : 'text-on-surface-variant hover:text-primary'
-                        }`}
-                      >
-                        {st}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Config workspace form */}
-              <form onSubmit={handleSaveSettings} className="glass-card p-6 rounded-3xl border border-outline-variant/30 space-y-5">
-                <span className="text-[9px] font-bold text-primary uppercase tracking-widest block pb-2 border-b border-outline-variant/10">
-                  Update Specialist Details
-                </span>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">First Name</label>
-                    <input 
-                      type="text" 
-                      required
-                      value={settingsData.firstName} 
-                      onChange={(e) => setSettingsData(prev => ({ ...prev, firstName: e.target.value }))}
-                      className="w-full px-3 py-2 border border-outline-variant rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">Last Name</label>
-                    <input 
-                      type="text" 
-                      required
-                      value={settingsData.lastName} 
-                      onChange={(e) => setSettingsData(prev => ({ ...prev, lastName: e.target.value }))}
-                      className="w-full px-3 py-2 border border-outline-variant rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[9px] font-bold text-primary mb-1 uppercase tracking-wider">Mobile Number</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={settingsData.phone} 
-                    onChange={(e) => setSettingsData(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full px-3 py-2 border border-outline-variant rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm bg-white"
-                  />
-                </div>
-
-                {/* Duty radius settings slider */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[9px] font-bold text-primary uppercase tracking-wider">Duty Radius Perimeter</label>
-                    <span className="text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded-full">{settingsData.travelRadius} km</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="5" 
-                    max="50" 
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
                     step="5"
-                    value={settingsData.travelRadius} 
+                    value={settingsData.travelRadius}
                     onChange={(e) => setSettingsData(prev => ({ ...prev, travelRadius: parseInt(e.target.value) }))}
-                    className="w-full h-1 bg-[#efeeeb] rounded-lg appearance-none cursor-pointer accent-primary border border-outline-variant/10"
+                    className="w-full h-1.5 bg-[#efeeeb] rounded-lg appearance-none cursor-pointer accent-primary border border-outline-variant/20"
                   />
-                  <div className="flex justify-between text-[7px] text-on-surface-variant/50 font-bold mt-1 uppercase tracking-widest">
+                  <div className="flex justify-between text-[8px] text-on-surface-variant/60 font-bold mt-1">
                     <span>5 km</span>
                     <span>25 km</span>
                     <span>50 km</span>
                   </div>
                 </div>
 
-                {/* Notification preferences toggles */}
-                <div className="space-y-3 pt-2">
-                  <span className="text-[8px] font-black text-secondary uppercase tracking-widest block">Operational Alert configs</span>
+                {/* Notification Preferences */}
+                <div className="space-y-4 pt-2">
+                  <label className="block text-[10px] font-black text-secondary uppercase tracking-wider mb-2">
+                    Alert Configurations
+                  </label>
+                  
+                  {/* Email Toggle */}
                   <div className="flex items-center justify-between">
-                    <span className="text-primary font-semibold text-[11px] uppercase tracking-wider">Dispatch Email Alerts</span>
-                    <button 
+                    <span className="text-primary font-semibold text-xs uppercase tracking-wider">New Dispatch Email Alerts</span>
+                    <button
                       type="button"
                       onClick={() => setSettingsData(prev => ({ ...prev, emailNotifications: !prev.emailNotifications }))}
-                      className={`relative inline-flex h-4 w-8 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${settingsData.emailNotifications ? 'bg-primary' : 'bg-gray-300'}`}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        settingsData.emailNotifications ? 'bg-primary' : 'bg-gray-300'
+                      }`}
                     >
-                      <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${settingsData.emailNotifications ? 'translate-x-4' : 'translate-x-0'}`} />
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          settingsData.emailNotifications ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
                     </button>
                   </div>
+
+                  {/* SMS Toggle */}
                   <div className="flex items-center justify-between">
-                    <span className="text-primary font-semibold text-[11px] uppercase tracking-wider">Dispatched SMS Alerts</span>
-                    <button 
+                    <span className="text-primary font-semibold text-xs uppercase tracking-wider">Dispatched Jobs SMS Alerts</span>
+                    <button
                       type="button"
                       onClick={() => setSettingsData(prev => ({ ...prev, smsNotifications: !prev.smsNotifications }))}
-                      className={`relative inline-flex h-4 w-8 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${settingsData.smsNotifications ? 'bg-primary' : 'bg-gray-300'}`}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        settingsData.smsNotifications ? 'bg-primary' : 'bg-gray-300'
+                      }`}
                     >
-                      <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${settingsData.smsNotifications ? 'translate-x-4' : 'translate-x-0'}`} />
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          settingsData.smsNotifications ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Emergency Off-Hours Dispatch */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-primary font-semibold text-xs uppercase tracking-wider">Emergency Dispatch Support</span>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsData(prev => ({ ...prev, emergencyDispatch: !prev.emergencyDispatch }))}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        settingsData.emergencyDispatch ? 'bg-primary' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          settingsData.emergencyDispatch ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
                     </button>
                   </div>
                 </div>
 
-                <button 
+                {/* Save Button */}
+                <button
                   type="submit"
-                  className="bg-gradient-primary text-white w-full py-3.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow-md active:scale-95 mt-4"
+                  className="w-full bg-gradient-primary text-on-primary font-label-md text-xs py-3.5 rounded-xl shadow-md hover:shadow-lg hover:translate-y-[-1px] active:scale-95 transition-all font-bold uppercase tracking-wider mt-4"
                 >
-                  Save Workspace Configurations
-                </button>
-              </form>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      {/* ----------------------------------------------------
-          MODALS & DRAWER TRAYS
-         ---------------------------------------------------- */}
-
-      {/* Incoming Job Real-Time Acceptance Card Modal */}
-      <AnimatePresence>
-        {incomingJob && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inverse-surface/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-sm p-6 border-2 border-[#d4af37] shadow-2xl relative overflow-hidden text-center space-y-6"
-            >
-              {/* Glowing countdown timer circle */}
-              <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle cx="40" cy="40" r="34" stroke="#efeeeb" strokeWidth="6" fill="transparent" />
-                  <circle cx="40" cy="40" r="34" stroke="#d4af37" strokeWidth="6" fill="transparent" 
-                    strokeDasharray={213}
-                    strokeDashoffset={213 - (213 * acceptanceTimer) / 60}
-                    className="transition-all duration-1000"
-                  />
-                </svg>
-                <span className="absolute text-xl font-black text-primary font-mono">{acceptanceTimer}s</span>
-              </div>
-
-              <div>
-                <span className="bg-[#f3e2ac] text-primary border border-primary/20 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest inline-block">
-                  ⚡ New Booking Assigned!
-                </span>
-                <h3 className="text-xl font-black text-primary font-headline-md tracking-tight capitalize mt-3">
-                  {incomingJob.serviceType?.replace(/_/g, ' ')}
-                </h3>
-                <p className="text-[11px] text-on-surface-variant font-semibold mt-2.5 flex items-center justify-center gap-1.5">
-                  <FiMapPin className="text-[#8b4513]" /> {incomingJob.serviceLocation?.address?.street}, {incomingJob.serviceLocation?.address?.city}
-                </p>
-                <div className="bg-[#efeeeb]/40 border border-outline-variant/20 rounded-2xl p-3.5 mt-4 text-center">
-                  <span className="text-[8px] font-bold text-secondary uppercase block">Booking Fee Payout</span>
-                  <span className="text-lg font-black text-[#8b4513] mt-1 block">₹{Math.round((incomingJob.cost?.totalCost || 1500) * 0.7)}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <button
-                  onClick={() => setShowRejectModal(true)}
-                  className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-bold py-3.5 rounded-xl uppercase text-[9px] tracking-wider transition-all active:scale-95"
-                >
-                  Decline Job
-                </button>
-                <button
-                  onClick={handleAcceptJob}
-                  className="bg-gradient-primary text-white font-bold py-3.5 rounded-xl uppercase text-[9px] tracking-wider transition-all shadow-md active:scale-95"
-                >
-                  Accept & Travel
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Reject Job Reason Modal */}
-      <AnimatePresence>
-        {showRejectModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inverse-surface/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5"
-            >
-              <h3 className="text-lg font-bold text-primary font-headline-md border-b pb-3">Select Rejection Reason</h3>
-              
-              <div className="space-y-2">
-                {[
-                  'Traffic / Distance too far',
-                  'Emergency vehicle issue',
-                  'Prior schedule delay',
-                  'Required tools unavailable',
-                  'Off-hours urgent support error'
-                ].map((reason) => (
-                  <button
-                    key={reason}
-                    type="button"
-                    onClick={() => setRejectReason(reason)}
-                    className={`w-full text-left px-4 py-3 rounded-xl text-xs font-semibold border transition-all ${
-                      rejectReason === reason 
-                        ? 'border-primary bg-primary/5 text-primary' 
-                        : 'border-outline-variant/30 text-on-surface-variant hover:bg-gray-50'
-                    }`}
-                  >
-                    {reason}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2 pt-2 justify-end">
-                <button
-                  onClick={() => {
-                    setShowRejectModal(false);
-                    setRejectReason('');
-                  }}
-                  className="px-4 py-2 border border-outline-variant/30 text-primary font-bold text-[10px] rounded-lg uppercase tracking-wider"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => handleRejectJob(rejectReason)}
-                  disabled={!rejectReason}
-                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] rounded-lg uppercase tracking-wider shadow disabled:opacity-50"
-                >
-                  Decline Dispatch
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Proof-of-Service Signature Drawing Completion Modal */}
-      <AnimatePresence>
-        {showCompleteModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inverse-surface/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 50, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5"
-            >
-              <div>
-                <span className="text-[8px] font-bold text-[#8b4513] uppercase tracking-widest block">AUTHENTICATION REQUIRED</span>
-                <h3 className="text-xl font-bold text-primary font-headline-md tracking-tight mt-1">Proof of Completed Service</h3>
-              </div>
-
-              {/* HTML Canvas drawing pad */}
-              <div>
-                <label className="block text-[9px] font-bold text-secondary uppercase tracking-wider mb-2">
-                  Client Autograph Signature
-                </label>
-                <canvas
-                  ref={canvasRef}
-                  width={340}
-                  height={150}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                  className="border-2 border-dashed border-outline-variant/40 bg-gray-50 rounded-xl cursor-crosshair w-full"
-                />
-                <div className="flex justify-between items-center mt-2.5 text-[9px] font-bold uppercase tracking-wider">
-                  <span className="text-on-surface-variant/50">Draw with touch/cursor</span>
-                  <button 
-                    type="button" 
-                    onClick={clearCanvas}
-                    className="text-red-600 hover:underline"
-                  >
-                    Clear autograph
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <button
-                  onClick={() => setShowCompleteModal(false)}
-                  className="bg-white border border-outline-variant/30 text-primary font-bold py-3.5 rounded-xl uppercase text-[9px] tracking-wider transition-all active:scale-95"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCompleteService}
-                  className="bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold py-3.5 rounded-xl uppercase text-[9px] tracking-wider transition-all shadow-md active:scale-95"
-                >
-                  Authenticate Complete
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Cash-Out Payout Withdrawal Modal Drawer */}
-      <AnimatePresence>
-        {showWithdrawModal && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-inverse-surface/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25 }}
-              className="bg-[#faf9f6] rounded-t-3xl w-full max-w-sm p-6 shadow-2xl space-y-5 border-t border-outline-variant/30"
-            >
-              <div className="flex justify-between items-center border-b border-outline-variant/20 pb-3">
-                <h3 className="text-lg font-bold text-primary font-headline-md">Instant Wallet Cash-Out</h3>
-                <button 
-                  onClick={() => {
-                    setShowWithdrawModal(false);
-                    setWithdrawAmount('');
-                  }}
-                  className="text-primary font-bold text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <form onSubmit={handleRequestWithdrawal} className="space-y-4">
-                <div className="bg-white border border-outline-variant/30 p-4 rounded-2xl flex justify-between items-center">
-                  <div>
-                    <span className="text-[8px] font-bold text-secondary uppercase block">Registered Bank</span>
-                    <span className="text-xs font-bold text-primary mt-1 block">HDFC Bank •••• 9845</span>
-                  </div>
-                  <span className="bg-[#f3e2ac] text-primary text-[8px] font-bold px-2 py-0.5 rounded border border-primary/20">DEFAULT</span>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1.5 text-[9px] font-bold uppercase tracking-wider text-secondary">
-                    <span>Withdrawal Amount (INR)</span>
-                    <span>Max: ₹{earningsData.balance}</span>
-                  </div>
-                  <div className="relative">
-                    <FiDollarSign className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary" />
-                    <input 
-                      type="number" 
-                      required
-                      min="100"
-                      max={earningsData.balance}
-                      placeholder="Enter amount to cash-out"
-                      value={withdrawAmount} 
-                      onChange={(e) => setWithdrawAmount(e.target.value)}
-                      className="w-full pl-9 pr-4 py-3 border border-outline-variant rounded-xl text-sm font-bold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm bg-white"
-                    />
-                  </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  className="bg-gradient-primary text-white w-full py-4 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all shadow-md active:scale-95 mt-4"
-                >
-                  Confirm Payout Transfer
+                  Save Settings Details
                 </button>
               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-
-      {/* Real-time Alert Notifications Drawer Panel */}
-      <AnimatePresence>
-        {showNotificationsDrawer && (
-          <div className="fixed inset-0 z-50 flex justify-end bg-inverse-surface/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              className="bg-[#faf9f6] w-full max-w-sm h-full shadow-2xl p-6 flex flex-col justify-between"
-            >
-              <div className="space-y-5 overflow-y-auto flex-grow pr-1">
-                <div className="flex justify-between items-center border-b border-outline-variant/20 pb-4">
-                  <h3 className="text-lg font-bold text-primary font-headline-md flex items-center gap-1.5">
-                    <FiBell size={18} /> Operational Alerts
-                  </h3>
-                  <button 
-                    onClick={() => setShowNotificationsDrawer(false)}
-                    className="text-primary font-bold text-sm"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {notifications.length === 0 ? (
-                    <p className="text-center text-xs text-on-surface-variant font-semibold py-8">No alerts or dispatches.</p>
-                  ) : (
-                    notifications.map((notif) => (
-                      <div 
-                        key={notif._id}
-                        onClick={() => !notif.isRead && markNotificationRead(notif._id)}
-                        className={`p-4 border rounded-2xl transition-all cursor-pointer ${
-                          !notif.isRead 
-                            ? 'bg-[#f3e2ac]/10 border-l-4 border-l-primary border-outline-variant/40 shadow-sm' 
-                            : 'bg-white border-outline-variant/10 opacity-70'
-                        }`}
-                      >
-                        <h4 className="text-xs font-bold text-primary leading-tight">{notif.title}</h4>
-                        <p className="text-[10px] text-on-surface-variant font-semibold mt-1 leading-normal">{notif.message}</p>
-                        <span className="text-[8px] text-on-surface-variant/60 font-semibold mt-2 inline-block">
-                          {new Date(notif.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-outline-variant/20">
-                <button 
-                  onClick={async () => {
-                    const unread = notifications.filter(n => !n.isRead);
-                    await Promise.all(unread.map(n => notificationService.markAsRead(n._id)));
-                    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-                    toast.success('All alerts marked as read');
-                  }}
-                  className="w-full py-3 bg-[#efeeeb] hover:bg-gray-200 border border-outline-variant/20 text-primary rounded-xl font-bold text-[10px] uppercase tracking-wider"
-                >
-                  Mark all as read
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Mobile Sticky Bottom Tab Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#faf9f6]/95 backdrop-blur-md border-t border-outline-variant/30 px-margin-mobile py-2.5 shadow-[0_-5px_15px_rgba(0,0,0,0.03)] flex justify-around max-w-lg mx-auto rounded-t-3xl">
-        {[
-          { id: 'jobs', label: 'Dispatches', icon: FiActivity },
-          { id: 'earnings', label: 'Earnings', icon: FiDollarSign },
-          { id: 'performance', label: 'Performance', icon: FiAward },
-          { id: 'profile', label: 'Configure', icon: FiSettings }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isSel = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center gap-1 transition-all ${
-                isSel ? 'text-primary scale-105' : 'text-on-surface-variant/60 hover:text-primary/75'
-              }`}
-            >
-              <div className={`p-1.5 rounded-xl transition-all ${
-                isSel ? 'bg-[#f3e2ac] text-primary' : 'bg-transparent'
-              }`}>
-                <Icon size={16} />
-              </div>
-              <span className="text-[8px] font-black uppercase tracking-wider">{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
 
       <Footer />
     </div>

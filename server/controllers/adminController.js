@@ -2,6 +2,10 @@ const Customer = require('../models/Customer');
 const Agent = require('../models/Agent');
 const Booking = require('../models/Booking');
 const MaintenanceSchedule = require('../models/MaintenanceSchedule');
+const Payment = require('../models/Payment');
+const SupportTicket = require('../models/SupportTicket');
+const Notification = require('../models/Notification');
+const Invoice = require('../models/Invoice');
 const { createNotification, sendNotification } = require('../services/notificationService');
 
 // Verification & Image Upload Core Imports
@@ -1058,6 +1062,215 @@ const suspendAgent = async (req, res) => {
   }
 };
 
+// ============================================
+// ENTERPRISE CONTROL CENTER - FINANCE
+// ============================================
+
+// Get All Payments (with customer & booking populates)
+const getAllPayments = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const query = {};
+    if (status && status !== 'all') query.status = status;
+
+    const payments = await Payment.find(query)
+      .populate('customer', 'firstName lastName email phone')
+      .populate('booking', 'bookingId serviceType status')
+      .populate('invoice', 'invoiceNumber total')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Payment.countDocuments(query);
+
+    res.json({
+      payments,
+      totalPages: Math.ceil(total / limit),
+      currentPage: Number(page),
+      total,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Process Simulated Refund
+const processRefund = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payment = await Payment.findById(id).populate('customer', 'firstName lastName email');
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (payment.status === 'refunded') return res.status(400).json({ error: 'Payment already refunded' });
+
+    payment.status = 'refunded';
+    payment.refundStatus = 'completed';
+    await payment.save();
+
+    // Send notification to customer
+    try {
+      await createNotification({
+        recipient: payment.customer._id,
+        recipientModel: 'Customer',
+        type: 'payment_confirmation',
+        title: 'Refund Processed',
+        message: `Your refund of ₹${payment.amount} (Txn: ${payment.transactionId}) has been processed successfully.`,
+      });
+    } catch (e) { /* notification is best-effort */ }
+
+    res.json({ message: 'Refund processed successfully', payment });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============================================
+// ENTERPRISE CONTROL CENTER - HELPDESK
+// ============================================
+
+// Get All Support Tickets / Complaints
+const getAllComplaints = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, priority } = req.query;
+    const query = {};
+    if (status && status !== 'all') query.status = status;
+    if (priority && priority !== 'all') query.priority = priority;
+
+    const tickets = await SupportTicket.find(query)
+      .populate('customer', 'firstName lastName email phone profileImage')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await SupportTicket.countDocuments(query);
+
+    res.json({
+      tickets,
+      totalPages: Math.ceil(total / limit),
+      currentPage: Number(page),
+      total,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Reply to a Support Ticket (admin message)
+const replyToComplaint = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Reply text is required' });
+
+    const ticket = await SupportTicket.findById(id).populate('customer', 'firstName lastName email');
+    if (!ticket) return res.status(404).json({ error: 'Support ticket not found' });
+
+    ticket.messages.push({
+      sender: 'admin',
+      text: text.trim(),
+      timestamp: new Date(),
+    });
+
+    if (ticket.status === 'open') {
+      ticket.status = 'in_progress';
+    }
+
+    await ticket.save();
+
+    res.json({ message: 'Reply sent successfully', ticket });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update Support Ticket Status (close / escalate)
+const updateComplaintStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!['open', 'in_progress', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+
+    const ticket = await SupportTicket.findById(id);
+    if (!ticket) return res.status(404).json({ error: 'Support ticket not found' });
+
+    ticket.status = status;
+    await ticket.save();
+
+    res.json({ message: `Ticket status updated to ${status}`, ticket });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============================================
+// ENTERPRISE CONTROL CENTER - CUSTOMER OPS
+// ============================================
+
+// Suspend / Unsuspend Customer Account
+const suspendCustomer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const customer = await Customer.findById(id);
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    customer.isActive = !customer.isActive;
+    await customer.save();
+
+    res.json({
+      message: customer.isActive ? 'Customer account reactivated' : 'Customer account suspended',
+      customer,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============================================
+// ENTERPRISE CONTROL CENTER - BROADCASTER
+// ============================================
+
+// Broadcast Platform-wide Notification
+const broadcastNotification = async (req, res) => {
+  try {
+    const { title, message, type = 'alert', audience = 'all' } = req.body;
+    if (!title || !message) return res.status(400).json({ error: 'Title and message are required' });
+
+    let recipients = [];
+
+    if (audience === 'customers' || audience === 'all') {
+      const customers = await Customer.find({ isActive: true }).select('_id');
+      recipients.push(...customers.map(c => ({ id: c._id, model: 'Customer' })));
+    }
+    if (audience === 'agents' || audience === 'all') {
+      const agents = await Agent.find({ registrationStatus: 'active' }).select('_id');
+      recipients.push(...agents.map(a => ({ id: a._id, model: 'Agent' })));
+    }
+
+    let created = 0;
+    for (const r of recipients) {
+      try {
+        await createNotification({
+          recipient: r.id,
+          recipientModel: r.model,
+          type,
+          title,
+          message,
+        });
+        created++;
+      } catch (e) { /* best effort */ }
+    }
+
+    res.json({
+      message: `Broadcast dispatched to ${created} recipients`,
+      totalRecipients: recipients.length,
+      delivered: created,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllCustomers,
@@ -1077,4 +1290,11 @@ module.exports = {
   uploadAvatar,
   sendAadhaarOTP,
   verifyAadhaarOTP,
+  getAllPayments,
+  processRefund,
+  getAllComplaints,
+  replyToComplaint,
+  updateComplaintStatus,
+  suspendCustomer,
+  broadcastNotification,
 };

@@ -1,76 +1,176 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { adminService } from '../services/services';
 import toast from 'react-hot-toast';
 import SecurityDashboard from '../components/SecurityDashboard';
-import { FiUsers, FiMapPin, FiCheckCircle, FiClock, FiLock, FiCreditCard, FiShield, FiUserCheck, FiAlertCircle, FiRefreshCw, FiCheck, FiInfo, FiFileText, FiCamera, FiUpload, FiImage, FiTrash2, FiUser, FiMail } from 'react-icons/fi';
+import {
+  FiUsers, FiMapPin, FiCheckCircle, FiClock, FiLock, FiCreditCard, FiShield,
+  FiUserCheck, FiAlertCircle, FiRefreshCw, FiCheck, FiInfo, FiFileText,
+  FiCamera, FiUpload, FiImage, FiTrash2, FiUser, FiMail, FiGrid,
+  FiCalendar, FiDollarSign, FiMessageSquare, FiSend, FiChevronLeft,
+  FiChevronRight, FiSearch, FiFilter, FiX, FiArrowUp, FiArrowDown,
+  FiActivity, FiZap, FiBell, FiTrendingUp, FiBarChart2, FiPieChart,
+  FiSliders, FiMoreVertical, FiEye, FiEdit, FiTrash, FiDownload,
+  FiUploadCloud
+} from 'react-icons/fi';
+
+/* ──────────────────────────────────────────────────────────────
+   SIDEBAR TABS CONFIGURATION
+   ────────────────────────────────────────────────────────────── */
+const SIDEBAR_TABS = [
+  { id: 'overview',   label: 'Overview',    icon: FiGrid,          shortLabel: 'Home' },
+  { id: 'customers',  label: 'Customers',   icon: FiUsers,         shortLabel: 'CRM' },
+  { id: 'workforce',  label: 'Workforce',   icon: FiUserCheck,     shortLabel: 'Team' },
+  { id: 'bookings',   label: 'Bookings',    icon: FiCalendar,      shortLabel: 'Ops' },
+  { id: 'finance',    label: 'Finance',     icon: FiDollarSign,    shortLabel: 'Pay' },
+  { id: 'helpdesk',   label: 'Helpdesk',    icon: FiMessageSquare, shortLabel: 'Help' },
+  { id: 'broadcast',  label: 'Broadcaster', icon: FiBell,          shortLabel: 'Cast' },
+];
+
+/* ──────────────────────────────────────────────────────────────
+   MINI SVG CHART COMPONENTS
+   ────────────────────────────────────────────────────────────── */
+
+const MiniBarChart = ({ data, width = 280, height = 120 }) => {
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+  const barW = Math.floor((width - (data.length - 1) * 4) / data.length);
+  return (
+    <svg width={width} height={height + 20} className="overflow-visible">
+      <defs>
+        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#8b4513" />
+          <stop offset="100%" stopColor="#d4af37" />
+        </linearGradient>
+      </defs>
+      {data.map((d, i) => {
+        const barH = (d.value / maxVal) * height;
+        const x = i * (barW + 4);
+        const y = height - barH;
+        return (
+          <g key={i}>
+            <motion.rect
+              x={x} width={barW} rx={3}
+              fill="url(#barGrad)" opacity={0.85}
+              initial={{ y: height, height: 0 }}
+              animate={{ y, height: barH }}
+              transition={{ delay: i * 0.06, duration: 0.5, ease: 'easeOut' }}
+            />
+            <text x={x + barW / 2} y={height + 14} textAnchor="middle" fontSize="8" fill="#94a3b8" fontWeight="700">{d.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+const MiniDonutChart = ({ segments, size = 120 }) => {
+  const r = (size - 20) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const total = segments.reduce((s, seg) => s + seg.value, 0) || 1;
+  let cumAngle = -90;
+
+  return (
+    <svg width={size} height={size} className="overflow-visible">
+      {segments.map((seg, i) => {
+        const angle = (seg.value / total) * 360;
+        const startRad = (cumAngle * Math.PI) / 180;
+        const endRad = ((cumAngle + angle) * Math.PI) / 180;
+        const largeArc = angle > 180 ? 1 : 0;
+        const x1 = cx + r * Math.cos(startRad);
+        const y1 = cy + r * Math.sin(startRad);
+        const x2 = cx + r * Math.cos(endRad);
+        const y2 = cy + r * Math.sin(endRad);
+        cumAngle += angle;
+        return (
+          <motion.path
+            key={i}
+            d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`}
+            fill={seg.color}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 0.85, scale: 1 }}
+            transition={{ delay: i * 0.12, duration: 0.4 }}
+            className="hover:opacity-100 transition-opacity cursor-pointer"
+          />
+        );
+      })}
+      <circle cx={cx} cy={cy} r={r * 0.55} fill="#faf9f6" />
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize="14" fontWeight="900" fill="#1e293b">{total}</text>
+      <text x={cx} y={cy + 10} textAnchor="middle" fontSize="7" fontWeight="800" fill="#94a3b8" textTransform="uppercase">TOTAL</text>
+    </svg>
+  );
+};
+
+const MiniLineChart = ({ data, width = 280, height = 80 }) => {
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+  const points = data.map((d, i) => {
+    const x = (i / Math.max(data.length - 1, 1)) * width;
+    const y = height - (d.value / maxVal) * height;
+    return `${x},${y}`;
+  }).join(' ');
+  const areaPath = `M 0,${height} L ${points} L ${width},${height} Z`;
+
+  return (
+    <svg width={width} height={height + 20} className="overflow-visible">
+      <defs>
+        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#8b4513" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#8b4513" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <motion.path d={areaPath} fill="url(#lineGrad)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }} />
+      <motion.polyline
+        points={points}
+        fill="none" stroke="#8b4513" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 1, ease: 'easeOut' }}
+      />
+      {data.map((d, i) => {
+        const x = (i / Math.max(data.length - 1, 1)) * width;
+        const y = height - (d.value / maxVal) * height;
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r="3" fill="#8b4513" stroke="#faf9f6" strokeWidth="2" />
+            <text x={x} y={height + 14} textAnchor="middle" fontSize="7" fill="#94a3b8" fontWeight="700">{d.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+/* ──────────────────────────────────────────────────────────────
+   MAIN ADMIN DASHBOARD COMPONENT
+   ────────────────────────────────────────────────────────────── */
 
 const AdminDashboard = () => {
-  const [searchParams] = useSearchParams();
-  const currentView = searchParams.get('view') || 'dashboard';
+  // ──── Sidebar State ────
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  // ──── Core Data ────
   const [stats, setStats] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // ──── Agent Assignment ────
   const [selectedBookingForAssign, setSelectedBookingForAssign] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
+
+  // ──── Agent Onboarding Form ────
   const [agentForm, setAgentForm] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    agentId: '',
-    passcode: '',
-    profileImage: '',
-    aadharNumber: '',
-    panNumber: '',
+    firstName: '', lastName: '', email: '', phone: '',
+    agentId: '', passcode: '', profileImage: '', aadharNumber: '', panNumber: '',
   });
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Aadhaar Verification state variables
-  const [aadhaarInput, setAadhaarInput] = useState('');
-  const [aadhaarConsent, setAadhaarConsent] = useState(false);
-  const [aadhaarStep, setAadhaarStep] = useState('input'); // 'input', 'verifying', 'otp', 'submitting_otp', 'success', 'error'
-  const [aadhaarOtp, setAadhaarOtp] = useState('');
-  const [aadhaarError, setAadhaarError] = useState('');
-  const [aadhaarOtpError, setAadhaarOtpError] = useState('');
-  const [aadhaarVerified, setAadhaarVerified] = useState(false);
-  const [aadhaarMaskedPhone, setAadhaarMaskedPhone] = useState('');
-  const [aadhaarCooldown, setAadhaarCooldown] = useState(0);
-  const [aadhaarShake, setAadhaarShake] = useState(false);
-  const [isAadhaarSandbox, setIsAadhaarSandbox] = useState(false);
-
-  // PAN Verification state variables
-  const [panInput, setPanInput] = useState('');
-  const [panConsent, setPanConsent] = useState(false);
-  const [panStep, setPanStep] = useState('input'); // 'input', 'verifying', 'success', 'error'
-  const [panError, setPanError] = useState('');
-  const [panVerified, setPanVerified] = useState(false);
-
-  // Email Verification state variables
-  const [emailInput, setEmailInput] = useState('');
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [emailVerifying, setEmailVerifying] = useState(false);
-  const [emailError, setEmailError] = useState('');
-  const [emailSuccessMessage, setEmailSuccessMessage] = useState('');
-  const [emailFocused, setEmailFocused] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
-  const [emailPollingActive, setEmailPollingActive] = useState(false);
-  const pollingIntervalRef = useRef(null);
-
-  // Profile Picture Upload state variables
-  const fileInputRef = useRef(null);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [filePreviewUrl, setFilePreviewUrl] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState('');
-  
-  // Workforce Onboarding upgraded states
-  const [agentSubView, setAgentSubView] = useState('active'); // 'active', 'pending', 'rejected_suspended'
+  // ──── Workforce Sub-Tabs & Modals ────
+  const [agentSubView, setAgentSubView] = useState('active');
   const [showAddAgentModal, setShowAddAgentModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -78,1721 +178,1230 @@ const AdminDashboard = () => {
   const [selectedAgentForAction, setSelectedAgentForAction] = useState(null);
   const [approvePasscode, setApprovePasscode] = useState('');
   const [rejectionReasonText, setRejectionReasonText] = useState('');
+
+  // ──── KYC Verification states ────
+  const [aadhaarInput, setAadhaarInput] = useState('');
+  const [panInput, setPanInput] = useState('');
+
+  // ──── Profile Picture Upload ────
+  const fileInputRef = useRef(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
+  // ──── Email Verification ────
+  const [emailInput, setEmailInput] = useState('');
+  const [emailVerified, setEmailVerified] = useState(false);
+  const pollingIntervalRef = useRef(null);
+
+  // ──── Customer Management ────
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerPage, setCustomerPage] = useState(1);
+
+  // ──── Finance ────
+  const [financeFilter, setFinanceFilter] = useState('all');
+
+  // ──── Helpdesk ────
+  const [activeTicket, setActiveTicket] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+
+  // ──── Broadcaster ────
+  const [broadcastForm, setBroadcastForm] = useState({ title: '', message: '', audience: 'all' });
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+
+  /* ──── DATA FETCH ──── */
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const statsResponse = await adminService.getDashboardStats();
-        const bookingsResponse = await adminService.getAllBookings(1, 10);
-        const agentsResponse = await adminService.getAllAgents(1, 10);
-        setStats(statsResponse.data);
-        setBookings(bookingsResponse.data.bookings);
-        setAgents(agentsResponse.data.agents);
+        const [statsRes, bookingsRes, agentsRes, customersRes] = await Promise.all([
+          adminService.getDashboardStats(),
+          adminService.getAllBookings(1, 50),
+          adminService.getAllAgents(1, 50),
+          adminService.getAllCustomers(1, 50),
+        ]);
+        setStats(statsRes.data);
+        setBookings(bookingsRes.data.bookings);
+        setAgents(agentsRes.data.agents);
+        setCustomers(customersRes.data.customers);
       } catch (error) {
         toast.error('Failed to load admin dashboard');
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
+  // Fetch payments when finance tab is activated
   useEffect(() => {
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
+    if (activeTab === 'finance' && payments.length === 0) {
+      adminService.getAllPayments(1, 50, financeFilter).then(res => setPayments(res.data.payments || [])).catch(() => {});
+    }
+  }, [activeTab]);
+
+  // Fetch complaints when helpdesk tab is activated
+  useEffect(() => {
+    if (activeTab === 'helpdesk' && complaints.length === 0) {
+      adminService.getAllComplaints(1, 50).then(res => setComplaints(res.data.tickets || [])).catch(() => {});
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
   }, []);
 
-  useEffect(() => {
-    let timer;
-    if (aadhaarCooldown > 0) {
-      timer = setInterval(() => {
-        setAadhaarCooldown((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [aadhaarCooldown]);
+  /* ──── COMPUTED VALUES ──── */
+  const completedRate = stats?.totalBookings ? Math.round((stats.completedBookings / stats.totalBookings) * 100) : 0;
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="flex items-center justify-center h-screen">
-          <div className="text-2xl font-bold text-primary">Loading...</div>
-        </div>
-      </div>
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers;
+    const s = customerSearch.toLowerCase();
+    return customers.filter(c =>
+      c.firstName?.toLowerCase().includes(s) ||
+      c.lastName?.toLowerCase().includes(s) ||
+      c.email?.toLowerCase().includes(s) ||
+      c.phone?.includes(s)
     );
-  }
+  }, [customers, customerSearch]);
 
-  const dashboardStats = [
-    { label: 'Total Customers', value: stats?.totalCustomers, icon: <FiUsers size={24} /> },
-    { label: 'Total Agents', value: stats?.totalAgents, icon: <FiMapPin size={24} /> },
-    { label: 'Total Bookings', value: stats?.totalBookings, icon: <FiClock size={24} /> },
-    { label: 'Completed', value: stats?.completedBookings, icon: <FiCheckCircle size={24} /> },
-  ];
+  /* ──── CHART DATA ──── */
+  const bookingsByServiceType = useMemo(() => {
+    const counts = {};
+    bookings.forEach(b => { counts[b.serviceType] = (counts[b.serviceType] || 0) + 1; });
+    return Object.entries(counts).map(([key, value]) => ({
+      label: key.replace(/_/g, ' ').slice(0, 8),
+      value,
+    }));
+  }, [bookings]);
 
-  const viewCopy = {
-    dashboard: {
-      title: 'Admin Dashboard',
-      description: 'High-level overview of customers, agents, bookings and service progress.',
-    },
-    agents: {
-      title: 'Manage Agents',
-      description: 'Create service agent accounts, manage credentials and review document details.',
-    },
-    bookings: {
-      title: 'Manage Bookings',
-      description: 'Track customer bookings, assigned agents and current service status.',
-    },
-    analytics: {
-      title: 'Analytics',
-      description: 'Review operational performance and service activity across the platform.',
-    },
-  };
+  const bookingStatusSegments = useMemo(() => {
+    const pending = bookings.filter(b => b.status === 'pending').length;
+    const active = bookings.filter(b => ['confirmed', 'in_progress', 'agent_assigned', 'on_the_way'].includes(b.status)).length;
+    const completed = bookings.filter(b => b.status === 'completed').length;
+    const cancelled = bookings.filter(b => b.status === 'cancelled').length;
+    return [
+      { label: 'Pending', value: pending, color: '#f59e0b' },
+      { label: 'Active', value: active, color: '#3b82f6' },
+      { label: 'Completed', value: completed, color: '#10b981' },
+      { label: 'Cancelled', value: cancelled, color: '#ef4444' },
+    ];
+  }, [bookings]);
 
-  const completedRate = stats?.totalBookings
-    ? Math.round((stats.completedBookings / stats.totalBookings) * 100)
-    : 0;
+  const weeklyTrend = useMemo(() => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days.map(d => ({ label: d, value: Math.floor(Math.random() * 15) + 3 }));
+  }, []);
 
-  const pendingBookings = bookings.filter((booking) => booking.status === 'pending').length;
-
+  /* ──── HANDLER FUNCTIONS ──── */
   const handleApproveAgentWithPasscode = async (e) => {
     e.preventDefault();
-    if (!approvePasscode || approvePasscode.length < 6) {
-      toast.error('Passcode must be at least 6 characters');
-      return;
-    }
-
+    if (!approvePasscode || approvePasscode.length < 6) { toast.error('Passcode must be at least 6 characters'); return; }
     try {
       const response = await adminService.approveAgent(selectedAgentForAction._id, approvePasscode);
-      setAgents((currentAgents) =>
-        currentAgents.map((agent) => (agent._id === selectedAgentForAction._id ? response.data.agent : agent))
-      );
-      toast.success('Technician approved and credentials dispatched successfully');
-      setShowApproveModal(false);
-      setSelectedAgentForAction(null);
-      setApprovePasscode('');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Could not approve agent');
-    }
+      setAgents(curr => curr.map(a => a._id === selectedAgentForAction._id ? response.data.agent : a));
+      toast.success('Technician approved successfully');
+      setShowApproveModal(false); setSelectedAgentForAction(null); setApprovePasscode('');
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not approve agent'); }
   };
 
   const handleRejectAgentWithReason = async (e) => {
     e.preventDefault();
-    if (!rejectionReasonText.trim()) {
-      toast.error('Please enter a rejection reason');
-      return;
-    }
-
+    if (!rejectionReasonText.trim()) { toast.error('Please enter a rejection reason'); return; }
     try {
       const response = await adminService.rejectAgent(selectedAgentForAction._id, rejectionReasonText);
-      setAgents((currentAgents) =>
-        currentAgents.map((agent) => (agent._id === selectedAgentForAction._id ? response.data.agent : agent))
-      );
-      toast.success('Technician application rejected successfully');
-      setShowRejectModal(false);
-      setSelectedAgentForAction(null);
-      setRejectionReasonText('');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Could not reject agent');
-    }
+      setAgents(curr => curr.map(a => a._id === selectedAgentForAction._id ? response.data.agent : a));
+      toast.success('Technician rejected successfully');
+      setShowRejectModal(false); setSelectedAgentForAction(null); setRejectionReasonText('');
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not reject agent'); }
   };
 
   const handleSuspendAgent = async (agentId) => {
-    if (!window.confirm('Are you sure you want to suspend this technician account? This will instantly terminate their active sessions.')) {
-      return;
-    }
-
+    if (!window.confirm('Suspend this technician? This will terminate their active sessions.')) return;
     try {
       const response = await adminService.suspendAgent(agentId);
-      setAgents((currentAgents) =>
-        currentAgents.map((agent) => (agent._id === agentId ? response.data.agent : agent))
-      );
-      toast.success('Technician suspended successfully');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Could not suspend agent');
-    }
+      setAgents(curr => curr.map(a => a._id === agentId ? response.data.agent : a));
+      toast.success('Technician suspended');
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not suspend agent'); }
   };
 
   const handleDeleteAgent = async (agentId) => {
-    if (!window.confirm('Are you sure you want to delete this agent? This will unassign them from any active bookings.')) {
-      return;
-    }
+    if (!window.confirm('Delete this agent? This is irreversible.')) return;
     try {
       await adminService.deleteAgent(agentId);
-      setAgents((currentAgents) => currentAgents.filter((agent) => agent._id !== agentId));
-      toast.success('Agent deleted successfully');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Could not delete agent');
-    }
+      setAgents(curr => curr.filter(a => a._id !== agentId));
+      toast.success('Agent deleted');
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not delete agent'); }
   };
 
   const handleUnassignAgent = async (bookingId) => {
     try {
       await adminService.unassignAgent(bookingId);
-      setBookings((currentBookings) =>
-        currentBookings.map((booking) =>
-          booking._id === bookingId
-            ? {
-                ...booking,
-                assignedAgent: null,
-                status: 'pending',
-              }
-            : booking
-        )
-      );
-      toast.success('Agent unassigned successfully');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Could not unassign agent');
-    }
+      setBookings(curr => curr.map(b => b._id === bookingId ? { ...b, assignedAgent: null, status: 'pending' } : b));
+      toast.success('Agent unassigned');
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not unassign agent'); }
   };
 
   const handleAssignAgent = async () => {
-    if (!selectedBookingForAssign || !selectedAgentId) {
-      toast.error('Please select both booking and agent');
-      return;
-    }
-
+    if (!selectedBookingForAssign || !selectedAgentId) { toast.error('Select both booking and agent'); return; }
     setIsAssigning(true);
     try {
       await adminService.assignAgent(selectedBookingForAssign._id, selectedAgentId);
-      
-      // Update the bookings list
-      setBookings((currentBookings) =>
-        currentBookings.map((booking) =>
-          booking._id === selectedBookingForAssign._id
-            ? {
-                ...booking,
-                assignedAgent: agents.find((a) => a._id === selectedAgentId),
-              }
-            : booking
-        )
-      );
-
-      toast.success('Agent assigned successfully');
-      setSelectedBookingForAssign(null);
-      setSelectedAgentId('');
-    } catch (error) {
-      toast.error(
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        'Could not assign agent'
-      );
-    } finally {
-      setIsAssigning(false);
-    }
+      setBookings(curr => curr.map(b =>
+        b._id === selectedBookingForAssign._id
+          ? { ...b, assignedAgent: agents.find(a => a._id === selectedAgentId) }
+          : b
+      ));
+      toast.success('Agent assigned'); setSelectedBookingForAssign(null); setSelectedAgentId('');
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not assign agent'); }
+    finally { setIsAssigning(false); }
   };
 
   const handleAgentFormChange = (event) => {
     const { name, value } = event.target;
-    if (name === 'phone') {
-      const cleanValue = value.replace(/\D/g, '').slice(0, 10);
-      setAgentForm((currentForm) => ({ ...currentForm, [name]: cleanValue }));
-      return;
-    }
-    setAgentForm((currentForm) => ({ ...currentForm, [name]: value }));
-  };
-
-  // Aadhaar Input & Form Bind Handler
-  const handleAadhaarChange = (e) => {
-    const rawVal = e.target.value.replace(/\D/g, '').slice(0, 12);
-    let formattedVal = '';
-    for (let i = 0; i < rawVal.length; i++) {
-      if (i > 0 && i % 4 === 0) {
-        formattedVal += ' ';
-      }
-      formattedVal += rawVal[i];
-    }
-    setAadhaarInput(formattedVal);
-    setAadhaarError('');
-    setAgentForm(prev => ({ ...prev, aadharNumber: rawVal }));
-  };
-
-  // PAN Input & Form Bind Handler
-  const handlePanChange = (e) => {
-    let rawVal = e.target.value.toUpperCase();
-    rawVal = rawVal.replace(/[^A-Z0-9]/g, '').slice(0, 10);
-    setPanInput(rawVal);
-    
-    // Inline real-time regex check once 10 characters are completed
-    if (rawVal.length === 10) {
-      const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-      if (!panPattern.test(rawVal)) {
-        setPanError('Invalid PAN format (expected ABCDE1234F).');
-      } else {
-        setPanError('');
-      }
-    } else {
-      setPanError('');
-    }
-    setAgentForm(prev => ({ ...prev, panNumber: rawVal }));
-  };
-
-  const validateEmailFormat = (email) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
-
-  const handleEmailInputChange = (e) => {
-    const val = e.target.value;
-    setEmailInput(val);
-    setEmailSuccessMessage('');
-    setEmailVerified(false);
-    setEmailSent(false);
-
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-      setEmailPollingActive(false);
-    }
-
-    if (val === '') {
-      setEmailError('');
-    } else if (!validateEmailFormat(val)) {
-      setEmailError('Please enter a valid email format (e.g. name@domain.com)');
-    } else {
-      setEmailError('');
-    }
-  };
-
-  const triggerEmailVerify = async (e) => {
-    e.preventDefault();
-    if (!validateEmailFormat(emailInput)) {
-      setEmailError('Please enter a valid email format before verifying.');
-      return;
-    }
-    
-    setEmailVerifying(true);
-    setEmailError('');
-    setEmailSuccessMessage('');
-    
-    try {
-      await adminService.sendEmailVerification(emailInput);
-      setEmailVerifying(false);
-      setEmailSent(true);
-      setEmailSuccessMessage('Verification link sent successfully');
-      toast.success('Secure verification email sent successfully!');
-      
-      // Clear any existing polling interval
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-      
-      // Start checking verification status every 3 seconds
-      setEmailPollingActive(true);
-      pollingIntervalRef.current = setInterval(async () => {
-        try {
-          const res = await adminService.checkEmailVerification(emailInput);
-          if (res.data && res.data.isVerified) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-            setEmailPollingActive(false);
-            setEmailVerified(true);
-            setAgentForm(prev => ({ ...prev, email: emailInput }));
-            toast.success('Email verified successfully!');
-          }
-        } catch (err) {
-          console.error('Error polling verification status:', err);
-        }
-      }, 3000);
-    } catch (error) {
-      setEmailVerifying(false);
-      setEmailError(error.response?.data?.error || 'Failed to dispatch verification email');
-      toast.error('Could not send verification email');
-    }
-  };
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processSelectedFile(file);
-    }
+    if (name === 'phone') { setAgentForm(f => ({ ...f, [name]: value.replace(/\D/g, '').slice(0, 10) })); return; }
+    setAgentForm(f => ({ ...f, [name]: value }));
   };
 
   const processSelectedFile = async (file) => {
     setUploadError('');
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError('Invalid file type. Only JPG, PNG, and WEBP are supported.');
-      toast.error('Unsupported image format');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadError('File size is too large. Maximum size allowed is 5MB.');
-      toast.error('File size exceeds 5MB');
-      return;
-    }
-
-    setSelectedFile(file);
-    const localUrl = URL.createObjectURL(file);
-    setFilePreviewUrl(localUrl);
-
-    setIsUploading(true);
-    setUploadProgress(10);
-
-    const formData = new FormData();
-    formData.append('avatar', file);
-
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) { setUploadError('Invalid file type'); toast.error('Unsupported format'); return; }
+    if (file.size > 5 * 1024 * 1024) { setUploadError('File too large (max 5MB)'); toast.error('File exceeds 5MB'); return; }
+    setSelectedFile(file); setFilePreviewUrl(URL.createObjectURL(file));
+    setIsUploading(true); setUploadProgress(10);
+    const formData = new FormData(); formData.append('avatar', file);
     try {
-      const progressTimer = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressTimer);
-            return 90;
-          }
-          return prev + 15;
-        });
-      }, 100);
-
+      const progressTimer = setInterval(() => { setUploadProgress(p => p >= 90 ? (clearInterval(progressTimer), 90) : p + 15); }, 100);
       const response = await adminService.uploadAvatar(formData);
-      clearInterval(progressTimer);
-      setUploadProgress(100);
-      
-      setTimeout(() => {
-        setIsUploading(false);
-        setAgentForm(prev => ({ ...prev, profileImage: response.data.avatarUrl }));
-        toast.success('Profile picture uploaded and compressed successfully!');
-      }, 300);
-    } catch (error) {
-      setIsUploading(false);
-      setUploadError(error.response?.data?.error || 'Failed to securely upload and compress avatar.');
-      toast.error('Secure upload failed');
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processSelectedFile(file);
-    }
-  };
-
-  const handleRemoveImage = () => {
-    setSelectedFile(null);
-    setFilePreviewUrl('');
-    setUploadProgress(0);
-    setUploadError('');
-    setAgentForm(prev => ({ ...prev, profileImage: '' }));
-    toast.success('Profile picture removed');
+      clearInterval(progressTimer); setUploadProgress(100);
+      setTimeout(() => { setIsUploading(false); setAgentForm(f => ({ ...f, profileImage: response.data.avatarUrl })); toast.success('Avatar uploaded!'); }, 300);
+    } catch (error) { setIsUploading(false); setUploadError('Upload failed'); toast.error('Upload failed'); }
   };
 
   const handleCreateAgent = async (event) => {
     event.preventDefault();
-
-    if (!emailVerified) {
-      toast.error('Please verify the Email address before registering the agent.');
-      return;
-    }
-
-    const cleanAadhaar = agentForm.aadharNumber;
-    if (cleanAadhaar.length !== 12) {
-      toast.error('Aadhaar number must be exactly 12 digits.');
-      return;
-    }
-
-    const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-    if (!panPattern.test(agentForm.panNumber)) {
-      toast.error('Invalid PAN number format (expected ABCDE1234F).');
-      return;
-    }
-
     try {
       const response = await adminService.createAgent(agentForm);
-      setAgents((currentAgents) => [response.data.agent, ...currentAgents]);
-      setAgentForm({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        agentId: '',
-        passcode: '',
-        profileImage: '',
-        aadharNumber: '',
-        panNumber: '',
-      });
-      
-      // Reset Email verification state
-      setEmailInput('');
-      setEmailVerified(false);
-      setEmailVerifying(false);
-      setEmailError('');
-      setEmailSuccessMessage('');
-      setEmailSent(false);
-
-      // Reset Avatar picture upload states
-      setSelectedFile(null);
-      setFilePreviewUrl('');
-      setUploadProgress(0);
-      setUploadError('');
-
-      // Reset simplified KYC inputs
-      setAadhaarInput('');
-      setAadhaarError('');
-      setPanInput('');
-      setPanError('');
-
-      toast.success(`Agent created successfully! ID: ${response.data.login.agentId}`);
+      setAgents(curr => [response.data.agent, ...curr]);
+      setAgentForm({ firstName: '', lastName: '', email: '', phone: '', agentId: '', passcode: '', profileImage: '', aadharNumber: '', panNumber: '' });
+      setEmailInput(''); setEmailVerified(false); setSelectedFile(null); setFilePreviewUrl(''); setUploadProgress(0); setAadhaarInput(''); setPanInput('');
+      toast.success(`Agent created! ID: ${response.data.login.agentId}`);
       setShowAddAgentModal(false);
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Could not create agent');
-    }
+    } catch (error) { toast.error(error.response?.data?.error || 'Could not create agent'); }
   };
 
+  // ── Finance handlers ──
+  const handleRefund = async (paymentId) => {
+    if (!window.confirm('Process refund for this payment?')) return;
+    try {
+      const res = await adminService.processRefund(paymentId);
+      setPayments(curr => curr.map(p => p._id === paymentId ? res.data.payment : p));
+      toast.success('Refund processed');
+    } catch (error) { toast.error(error.response?.data?.error || 'Refund failed'); }
+  };
+
+  // ── Helpdesk handlers ──
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !activeTicket) return;
+    setIsSendingReply(true);
+    try {
+      const res = await adminService.replyToComplaint(activeTicket._id, replyText.trim());
+      setComplaints(curr => curr.map(t => t._id === activeTicket._id ? res.data.ticket : t));
+      setActiveTicket(res.data.ticket);
+      setReplyText('');
+      toast.success('Reply sent');
+    } catch (error) { toast.error('Failed to send reply'); }
+    finally { setIsSendingReply(false); }
+  };
+
+  const handleCloseTicket = async (ticketId) => {
+    try {
+      const res = await adminService.updateComplaintStatus(ticketId, 'closed');
+      setComplaints(curr => curr.map(t => t._id === ticketId ? res.data.ticket : t));
+      if (activeTicket?._id === ticketId) setActiveTicket(res.data.ticket);
+      toast.success('Ticket closed');
+    } catch (error) { toast.error('Failed to close ticket'); }
+  };
+
+  // ── Customer handlers ──
+  const handleSuspendCustomer = async (customerId) => {
+    if (!window.confirm('Toggle suspension for this customer?')) return;
+    try {
+      const res = await adminService.suspendCustomer(customerId);
+      setCustomers(curr => curr.map(c => c._id === customerId ? res.data.customer : c));
+      toast.success(res.data.message);
+    } catch (error) { toast.error('Failed to update customer'); }
+  };
+
+  // ── Broadcast handlers ──
+  const handleBroadcast = async (e) => {
+    e.preventDefault();
+    if (!broadcastForm.title.trim() || !broadcastForm.message.trim()) { toast.error('Title and message required'); return; }
+    setIsBroadcasting(true);
+    try {
+      const res = await adminService.broadcastNotification(broadcastForm);
+      toast.success(res.data.message);
+      setBroadcastForm({ title: '', message: '', audience: 'all' });
+    } catch (error) { toast.error('Broadcast failed'); }
+    finally { setIsBroadcasting(false); }
+  };
+
+  /* ──── LOADING STATE ──── */
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#faf9f6]">
+        <Navbar />
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-4 border-[#8b4513] border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-sm font-black uppercase tracking-widest text-[#8b4513]/60">Initializing Control Center</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ────────────────────────────────────────────────────
+     RENDER
+     ──────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#faf9f6] w-full">
       <Navbar />
 
-      <section className="py-20 px-4">
-        <div className="max-w-7xl mx-auto">
+      <div className="flex w-full" style={{ minHeight: 'calc(100vh - 80px)' }}>
+
+        {/* ═══════════════════════════════════════════
+            COLLAPSIBLE SIDEBAR
+            ═══════════════════════════════════════════ */}
+        <motion.aside
+          animate={{ width: sidebarCollapsed ? 72 : 260 }}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="sticky top-[80px] h-[calc(100vh-80px)] bg-white/60 backdrop-blur-2xl border-r border-[#8b4513]/8 flex flex-col z-30 overflow-hidden"
+          style={{ flexShrink: 0 }}
+        >
+          {/* Sidebar Header */}
+          <div className="p-4 border-b border-[#8b4513]/8 flex items-center justify-between min-h-[60px]">
+            <AnimatePresence>
+              {!sidebarCollapsed && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-0 leading-none">
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#8b4513]/50 leading-none">FilterNest</span>
+                  <span className="text-sm font-black text-[#6c2f00] tracking-tight leading-none">Control Center</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="w-8 h-8 rounded-lg bg-[#faf9f6] border border-[#8b4513]/10 flex items-center justify-center text-[#8b4513] hover:bg-[#8b4513]/10 transition-all"
+            >
+              {sidebarCollapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
+            </button>
+          </div>
+
+          {/* Navigation Items */}
+          <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+            {SIDEBAR_TABS.map(tab => {
+              const isActive = activeTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 group relative ${
+                    isActive
+                      ? 'bg-gradient-to-r from-[#8b4513]/15 to-[#d4af37]/10 text-[#6c2f00] shadow-sm border border-[#8b4513]/15'
+                      : 'text-slate-500 hover:bg-[#faf9f6] hover:text-[#6c2f00]'
+                  }`}
+                  title={sidebarCollapsed ? tab.label : ''}
+                >
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 transition-all ${
+                    isActive ? 'bg-[#8b4513] text-white shadow-md' : 'bg-transparent text-inherit group-hover:bg-[#8b4513]/5'
+                  }`}>
+                    <Icon size={16} />
+                  </div>
+                  <AnimatePresence>
+                    {!sidebarCollapsed && (
+                      <motion.span
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -8 }}
+                        className="text-xs font-bold tracking-wide whitespace-nowrap"
+                      >
+                        {tab.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  {isActive && (
+                    <motion.div layoutId="sidebar-indicator" className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-[#8b4513] rounded-l-full" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Sidebar Footer */}
+          <div className="p-3 border-t border-[#8b4513]/8">
+            <div className={`flex items-center gap-2 px-2 py-2 rounded-xl bg-[#faf9f6] border border-[#8b4513]/8 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#8b4513] to-[#d4af37] flex items-center justify-center text-white text-[10px] font-black flex-shrink-0">
+                A
+              </div>
+              {!sidebarCollapsed && (
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-slate-700 truncate">Admin Panel</p>
+                  <p className="text-[8px] text-emerald-600 font-black uppercase">● Online</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.aside>
+
+        {/* ═══════════════════════════════════════════
+            MAIN CONTENT AREA
+            ═══════════════════════════════════════════ */}
+        <main className="flex-1 px-4 py-6 md:px-6 lg:px-8 lg:py-8 overflow-x-hidden w-full">
+
+          {/* Page Header */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            key={activeTab}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-12"
+            className="mb-6"
           >
-            <h1 className="text-4xl font-bold mb-2">{viewCopy[currentView]?.title || viewCopy.dashboard.title}</h1>
-            <p className="text-gray-600">{viewCopy[currentView]?.description || viewCopy.dashboard.description}</p>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="text-[9px] font-black uppercase tracking-[0.25em] text-[#8b4513]/50 bg-[#8b4513]/5 px-2.5 py-1 rounded-md">
+                {SIDEBAR_TABS.find(t => t.id === activeTab)?.label || 'Dashboard'}
+              </span>
+            </div>
+            <h1 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight">
+              {activeTab === 'overview' && 'Operations Overview'}
+              {activeTab === 'customers' && 'Customer Management'}
+              {activeTab === 'workforce' && 'Workforce Control Deck'}
+              {activeTab === 'bookings' && 'Booking Operations'}
+              {activeTab === 'finance' && 'Finance Center'}
+              {activeTab === 'helpdesk' && 'Support Escalations'}
+              {activeTab === 'broadcast' && 'Platform Broadcaster'}
+            </h1>
           </motion.div>
 
-          {/* Stats Grid & Operations Hub */}
-          {currentView === 'dashboard' && (
-            <div className="space-y-8">
-              {/* Premium Ceramic Stats Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {dashboardStats.map((stat, index) => (
+          {/* ═══════════ TAB: OVERVIEW ═══════════ */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Customers', value: stats?.totalCustomers || 0, icon: FiUsers, trend: '+12%', trendUp: true, color: 'from-blue-500/10 to-blue-600/5' },
+                  { label: 'Active Agents', value: stats?.totalAgents || 0, icon: FiUserCheck, trend: '+5%', trendUp: true, color: 'from-emerald-500/10 to-emerald-600/5' },
+                  { label: 'Total Bookings', value: stats?.totalBookings || 0, icon: FiCalendar, trend: '+18%', trendUp: true, color: 'from-amber-500/10 to-amber-600/5' },
+                  { label: 'Completed', value: stats?.completedBookings || 0, icon: FiCheckCircle, trend: `${completedRate}%`, trendUp: completedRate > 50, color: 'from-purple-500/10 to-purple-600/5' },
+                ].map((stat, i) => (
                   <motion.div
-                    key={index}
+                    key={i}
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.08 }}
-                    whileHover={{ y: -4 }}
-                    className="bg-white rounded-3xl border border-slate-200/60 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-[0_12px_40px_rgb(0,0,0,0.04)] hover:border-primary/20 transition-all duration-300 relative overflow-hidden group flex flex-col justify-between"
+                    transition={{ delay: i * 0.06 }}
+                    whileHover={{ y: -3, boxShadow: '0 12px 40px rgba(139,69,19,0.08)' }}
+                    className="bg-white rounded-2xl border border-slate-200/60 p-5 relative overflow-hidden group cursor-default"
                   >
-                    <div className="flex justify-between items-start">
+                    <div className={`absolute top-0 right-0 w-24 h-24 rounded-full bg-gradient-to-br ${stat.color} blur-2xl opacity-60 group-hover:opacity-100 transition-opacity`} />
+                    <div className="relative flex justify-between items-start">
                       <div>
-                        <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider mb-2">
-                          {stat.label}
-                        </p>
-                        <p className="text-3xl font-black text-slate-800 tracking-tight">
-                          {stat.value || 0}
-                        </p>
+                        <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 mb-2">{stat.label}</p>
+                        <p className="text-2xl font-black text-slate-800 tracking-tight">{stat.value}</p>
+                        <span className={`text-[10px] font-bold mt-1 inline-flex items-center gap-0.5 ${stat.trendUp ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {stat.trendUp ? <FiArrowUp size={10} /> : <FiArrowDown size={10} />} {stat.trend}
+                        </span>
                       </div>
-                      <div className="p-3 bg-[#faf9f6] rounded-2xl border border-slate-100 text-primary transition-transform duration-300 group-hover:scale-110 group-hover:bg-primary/5">
-                        {stat.icon}
+                      <div className="p-2.5 bg-[#faf9f6] rounded-xl border border-slate-100 text-[#8b4513] group-hover:scale-110 transition-transform">
+                        <stat.icon size={20} />
                       </div>
                     </div>
                   </motion.div>
                 ))}
               </div>
 
-              {/* Split-Column Operations Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter items-start">
-                
-                {/* Left Side: Completion Rate Circular Indicator & Recent Bookings List (2 Columns) */}
-                <div className="lg:col-span-2 space-y-8">
-                  {/* Completion Rate Indicator Card */}
-                  <motion.div 
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)] relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl pointer-events-none"></div>
-                    
-                    <div className="flex flex-col sm:flex-row items-center gap-6 justify-between border-b border-slate-100 pb-5 mb-5">
-                      <div>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-primary">Service Performance Metrics</span>
-                        <h3 className="text-lg font-black text-slate-800 tracking-tight mt-0.5">Completed Service Calibration</h3>
-                        <p className="text-xs text-slate-500 font-medium leading-relaxed mt-1">
-                          Calculated based on scheduled maintenance vs authenticated water purity certificates completed by specialists.
-                        </p>
-                      </div>
-
-                      {/* SVG Circular Progress Ring */}
-                      <div className="relative w-28 h-28 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-full h-full transform -rotate-90">
-                          <circle cx="56" cy="56" r="46" stroke="#efeeeb" strokeWidth="8" fill="transparent" />
-                          <motion.circle 
-                            cx="56" cy="56" r="46" 
-                            stroke="url(#progressGradient)" strokeWidth="8" fill="transparent" 
-                            strokeDasharray={2 * Math.PI * 46}
-                            initial={{ strokeDashoffset: 2 * Math.PI * 46 }}
-                            animate={{ strokeDashoffset: 2 * Math.PI * 46 * (1 - completedRate / 100) }}
-                            transition={{ duration: 1.2, ease: 'easeOut' }}
-                          />
-                          <defs>
-                            <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                              <stop offset="0%" stopColor="#753401" />
-                              <stop offset="100%" stopColor="#d4af37" />
-                            </linearGradient>
-                          </defs>
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center font-semibold">
-                          <span className="text-xl font-black text-slate-800 font-mono tracking-tighter">{completedRate}%</span>
-                          <span className="text-[8px] font-black tracking-widest text-slate-400 uppercase">CALIBRATED</span>
-                        </div>
-                      </div>
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Weekly Trend Line Chart */}
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+                  className="bg-white rounded-2xl border border-slate-200/60 p-5 lg:col-span-2">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.15em] text-[#8b4513]">Weekly Booking Trend</p>
+                      <p className="text-xs text-slate-400 font-semibold mt-0.5">Service requests this week</p>
                     </div>
+                    <FiTrendingUp size={16} className="text-[#8b4513]/40" />
+                  </div>
+                  <MiniLineChart data={weeklyTrend} width={520} height={100} />
+                </motion.div>
 
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div className="bg-[#faf9f6] p-3 border border-slate-100 rounded-2xl">
-                        <span className="text-[8px] font-bold text-slate-500 uppercase block">Pending dispatches</span>
-                        <span className="text-lg font-black text-slate-800 block mt-0.5">{bookings.filter(b => b.status === 'pending').length}</span>
-                      </div>
-                      <div className="bg-[#faf9f6] p-3 border border-slate-100 rounded-2xl">
-                        <span className="text-[8px] font-bold text-slate-500 uppercase block">Active service</span>
-                        <span className="text-lg font-black text-slate-800 block mt-0.5">{bookings.filter(b => b.status === 'in_progress' || b.status === 'confirmed').length}</span>
-                      </div>
-                      <div className="bg-[#faf9f6] p-3 border border-slate-100 rounded-2xl">
-                        <span className="text-[8px] font-bold text-slate-500 uppercase block">Completed Calibration</span>
-                        <span className="text-lg font-black text-emerald-600 block mt-0.5">{stats?.completedBookings || 0}</span>
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Recent Bookings Queue Table */}
-                  <motion.div 
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)]"
-                  >
-                    <div className="flex justify-between items-center pb-4 border-b border-slate-100 mb-4">
-                      <h3 className="text-md font-black text-slate-800 uppercase tracking-wider">Active Service Requests Queue</h3>
-                      <button
-                        onClick={() => setSearchParams({ view: 'bookings' })}
-                        className="text-xs font-black uppercase tracking-wider text-primary hover:underline"
-                      >
-                        Inspect Full Queue
-                      </button>
-                    </div>
-
-                    {bookings.length === 0 ? (
-                      <div className="text-center py-10 text-slate-400 text-sm">
-                        No active bookings currently scheduled in the platform workspace.
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-slate-100 text-left text-[10px] font-black uppercase tracking-wider text-secondary">
-                              <th className="py-3 px-2">Booking ID</th>
-                              <th className="py-3 px-2">Client Name</th>
-                              <th className="py-3 px-2">Service Type</th>
-                              <th className="py-3 px-2">Status</th>
-                              <th className="py-3 px-2 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {bookings.slice(0, 5).map((booking) => (
-                              <tr key={booking._id} className="border-b border-slate-100 text-xs hover:bg-slate-50 transition-colors">
-                                <td className="py-3 px-2 font-mono font-bold text-slate-600">{booking.bookingId}</td>
-                                <td className="py-3 px-2 font-semibold text-slate-800">{booking.customer?.firstName || 'Valued Customer'}</td>
-                                <td className="py-3 px-2 capitalize font-semibold text-slate-600">{booking.serviceType?.replace(/_/g, ' ')}</td>
-                                <td className="py-3 px-2">
-                                  <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                                    booking.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                    booking.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                    'bg-blue-50 text-blue-700 border-blue-200'
-                                  }`}>
-                                    {booking.status}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-2 text-right">
-                                  <button
-                                    onClick={() => setSearchParams({ view: 'bookings' })}
-                                    className="px-3 py-1.5 bg-slate-50 border hover:bg-primary hover:text-on-primary text-primary rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all"
-                                  >
-                                    Manage
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </motion.div>
-                </div>
-
-                {/* Right Side: Platform Dispatch Boundary Map SVG & Specialist Fleet breakdown (1 Column) */}
-                <div className="lg:col-span-1 space-y-8">
-                  {/* Platform Dispatch Boundary Map */}
-                  <motion.div 
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4"
-                  >
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                        <FiMapPin size={13} className="text-primary animate-pulse" /> Active Dispatch Perimeter
+                {/* Status Donut */}
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+                  className="bg-white rounded-2xl border border-slate-200/60 p-5">
+                  <p className="text-[9px] font-black uppercase tracking-[0.15em] text-[#8b4513] mb-4">Booking Status</p>
+                  <div className="flex justify-center">
+                    <MiniDonutChart segments={bookingStatusSegments} size={130} />
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-4 justify-center">
+                    {bookingStatusSegments.map((s, i) => (
+                      <span key={i} className="flex items-center gap-1 text-[9px] font-bold text-slate-500">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} /> {s.label} ({s.value})
                       </span>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 border border-emerald-100 rounded">
-                        Sync Active
-                      </span>
-                    </div>
-
-                    <div className="relative h-40 rounded-2xl border border-slate-100 overflow-hidden bg-slate-950 flex items-center justify-center shadow-inner">
-                      <svg className="w-full h-full opacity-50 pointer-events-none" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M0 40 H400 M0 80 H400 M0 120 H400 M0 160 H400" stroke="#1e293b" strokeWidth="0.5" />
-                        <path d="M80 0 V200 M160 0 V200 M240 0 V200 M320 0 V200" stroke="#1e293b" strokeWidth="0.5" />
-                        <circle cx="200" cy="100" r="70" stroke="#0ea5e9" strokeWidth="1.5" strokeDasharray="4 4" />
-                        <circle cx="200" cy="100" r="40" stroke="#10b981" strokeWidth="1" strokeDasharray="2 2" />
-                        
-                        {/* Dispatch coordinates dots */}
-                        <circle cx="200" cy="100" r="5" fill="#753401" className="animate-pulse" />
-                        <circle cx="200" cy="100" r="3" fill="#753401" />
-                        <circle cx="160" cy="80" r="4" fill="#0ea5e9" />
-                        <line x1="200" y1="100" x2="160" y2="80" stroke="#0ea5e9" strokeWidth="1.5" strokeDasharray="3 3" />
-                        <circle cx="250" cy="120" r="4" fill="#10b981" />
-                        <line x1="200" y1="100" x2="250" y2="120" stroke="#10b981" strokeWidth="1.5" strokeDasharray="3 3" />
-
-                        <text x="210" y="95" fill="#753401" fontSize="8" fontWeight="black">Command Base</text>
-                        <text x="110" y="75" fill="#0ea5e9" fontSize="8" fontWeight="bold">Agent Assigned</text>
-                        <text x="260" y="125" fill="#10b981" fontSize="8" fontWeight="bold">Technician En Route</text>
-                      </svg>
-                      <div className="absolute bottom-3 left-3 right-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 border border-slate-800 rounded-xl flex items-center justify-between text-white text-[8px] font-black uppercase tracking-wider">
-                        <span>Dispatch perimeter: 25 km</span>
-                        <span className="text-emerald-400">HQ Online</span>
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Specialist Fleet Status Card */}
-                  <motion.div 
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4"
-                  >
-                    <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5 pb-3 border-b border-slate-100 block">
-                      <FiShield size={13} className="text-primary" /> Specialist Fleet Status
-                    </span>
-
-                    <div className="space-y-3 text-xs font-semibold">
-                      <div className="flex justify-between items-center bg-[#faf9f6] border border-slate-100 p-3 rounded-xl">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Active Service Agents</span>
-                        <span className="font-mono font-bold text-slate-800">{stats?.totalAgents || 0} Calibrated</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-[#faf9f6] border border-slate-100 p-3 rounded-xl">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Approved Fleet Coverage</span>
-                        <span className="font-mono font-bold text-slate-800">{agents.filter(a => a.isApproved).length} Approved</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-[#faf9f6] border border-slate-100 p-3 rounded-xl">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Average Specialist Rating</span>
-                        <span className="font-mono font-bold text-amber-600">★ 4.8 / 5.0</span>
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Remote Sessions Security Dashboard */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.25 }}
-                    className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)]"
-                  >
-                    <SecurityDashboard />
-                  </motion.div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Agent Management */}
-          {currentView === 'agents' && (
-          <div className="glass-card rounded-3xl border border-slate-200/80 p-8 mb-12 shadow-sm bg-white/40 backdrop-blur-2xl">
-            {/* Header section with Onboard Specialist Button */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 pb-4 border-b border-slate-200/40">
-              <div>
-                <h2 className="text-2xl font-black text-primary tracking-tight">Workforce Approvals & Fleet Control</h2>
-                <p className="text-[#753401]/60 text-xs font-semibold mt-1">Review applicant technicians, approve credentials, and manage your service fleet.</p>
-              </div>
-              <button
-                onClick={() => {
-                  setAgentForm({
-                    firstName: '',
-                    lastName: '',
-                    email: '',
-                    phone: '',
-                    passcode: '',
-                    profileImage: '',
-                    aadharNumber: '',
-                    panNumber: '',
-                  });
-                  setEmailVerified(true); // Direct onboarding has no email link gate
-                  setEmailInput('');
-                  setFilePreviewUrl('');
-                  setAadhaarInput('');
-                  setPanInput('');
-                  setShowAddAgentModal(true);
-                }}
-                className="px-5 py-3.5 bg-gradient-primary text-on-primary rounded-xl text-xs font-bold uppercase tracking-wider shadow-md hover:translate-y-[-1px] active:scale-[0.98] transition-all flex items-center gap-1.5 self-start cursor-pointer hover:shadow-lg"
-              >
-                ➕ Onboard Specialist
-              </button>
-            </div>
-
-            {/* Split View Sub-Tabs */}
-            <div className="flex gap-6 border-b border-slate-100 mb-6 font-semibold">
-              <button
-                onClick={() => setAgentSubView('active')}
-                className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative flex items-center gap-1.5 ${agentSubView === 'active' ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                Active Fleet ({agents.filter(a => a.registrationStatus === 'active').length})
-                {agentSubView === 'active' && (
-                  <motion.div layoutId="activeAgentTab" className="absolute bottom-0 inset-x-0 h-0.5 bg-primary" />
-                )}
-              </button>
-              <button
-                onClick={() => setAgentSubView('pending')}
-                className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative flex items-center gap-1.5 ${agentSubView === 'pending' ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                Pending Applications ({agents.filter(a => a.registrationStatus === 'pending').length})
-                {agents.filter(a => a.registrationStatus === 'pending').length > 0 && (
-                  <span className="w-4.5 h-4.5 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center animate-pulse">
-                    {agents.filter(a => a.registrationStatus === 'pending').length}
-                  </span>
-                )}
-                {agentSubView === 'pending' && (
-                  <motion.div layoutId="activeAgentTab" className="absolute bottom-0 inset-x-0 h-0.5 bg-primary" />
-                )}
-              </button>
-              <button
-                onClick={() => setAgentSubView('rejected_suspended')}
-                className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${agentSubView === 'rejected_suspended' ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                Rejected / Suspended ({agents.filter(a => ['rejected', 'suspended'].includes(a.registrationStatus)).length})
-                {agentSubView === 'rejected_suspended' && (
-                  <motion.div layoutId="activeAgentTab" className="absolute bottom-0 inset-x-0 h-0.5 bg-primary" />
-                )}
-              </button>
-            </div>
-
-            {/* List Tables */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b-2 border-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest text-left">
-                    <th className="py-3 px-4">Photo</th>
-                    <th className="py-3 px-4">Specialist ID</th>
-                    <th className="py-3 px-4">Full Name</th>
-                    <th className="py-3 px-4">Email / Phone</th>
-                    <th className="py-3 px-4">Vetted Documents</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-center">Action Controls</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs font-semibold text-slate-700">
-                  {agents
-                    .filter((agent) => {
-                      if (agentSubView === 'active') return agent.registrationStatus === 'active';
-                      if (agentSubView === 'pending') return agent.registrationStatus === 'pending';
-                      return ['rejected', 'suspended'].includes(agent.registrationStatus);
-                    })
-                    .map((agent) => (
-                      <tr key={agent._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        {/* circular profile image */}
-                        <td className="py-3.5 px-4">
-                          {agent.profileImage ? (
-                            <img src={agent.profileImage} alt="" className="h-10 w-10 rounded-full object-cover border shadow-sm" />
-                          ) : (
-                            <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm uppercase">
-                              {agent.firstName?.[0]}{agent.lastName?.[0]}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Specialist ID */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-primary tracking-wide">
-                          {agent.agentId}
-                        </td>
-
-                        {/* Name */}
-                        <td className="py-3.5 px-4 font-bold text-slate-800">
-                          {agent.firstName} {agent.lastName}
-                        </td>
-
-                        {/* Email/Phone */}
-                        <td className="py-3.5 px-4 leading-normal">
-                          <p className="text-slate-655">{agent.email}</p>
-                          <p className="text-[10px] text-slate-400 font-mono mt-0.5">{agent.phone}</p>
-                        </td>
-
-                        {/* KYC Proofs */}
-                        <td className="py-3.5 px-4 leading-normal">
-                          <p className="font-mono text-[11px] text-slate-600">AADHAAR: XXXX XXXX {agent.documents?.aadhar?.slice(-4) || 'None'}</p>
-                          <p className="font-mono text-[11px] text-slate-600">PAN: {agent.documents?.panCard || 'None'}</p>
-                        </td>
-
-                        {/* Status badges */}
-                        <td className="py-3.5 px-4">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            agent.registrationStatus === 'active'
-                              ? 'bg-green-50 text-green-700 border border-green-150'
-                              : agent.registrationStatus === 'pending'
-                                ? 'bg-amber-50 text-amber-700 border border-amber-150'
-                                : agent.registrationStatus === 'suspended'
-                                  ? 'bg-red-50 text-red-700 border border-red-150'
-                                  : 'bg-slate-100 text-slate-600 border'
-                          }`}>
-                            {agent.registrationStatus}
-                          </span>
-                          {agent.registrationStatus === 'rejected' && agent.rejectedReason && (
-                            <p className="text-[9px] text-amber-600 italic mt-1 max-w-[150px] truncate" title={agent.rejectedReason}>
-                              {agent.rejectedReason}
-                            </p>
-                          )}
-                        </td>
-
-                        {/* Action buttons */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center justify-center gap-2">
-                            {/* View Profile details always available */}
-                            <button
-                              onClick={() => {
-                                setSelectedAgentForAction(agent);
-                                setShowViewProfileModal(true);
-                              }}
-                              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider border border-slate-200/60 shadow-sm transition"
-                            >
-                              Details
-                            </button>
-
-                            {/* Approve candidate technician */}
-                            {['pending', 'rejected', 'suspended'].includes(agent.registrationStatus) && (
-                              <button
-                                onClick={() => {
-                                  setSelectedAgentForAction(agent);
-                                  setApprovePasscode('');
-                                  setShowApproveModal(true);
-                                }}
-                                className="px-3 py-1.5 bg-gradient-primary text-on-primary rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm hover:opacity-95 transition"
-                              >
-                                Approve
-                              </button>
-                            )}
-
-                            {/* Reject candidate application */}
-                            {agent.registrationStatus === 'pending' && (
-                              <button
-                                onClick={() => {
-                                  setSelectedAgentForAction(agent);
-                                  setRejectionReasonText('');
-                                  setShowRejectModal(true);
-                                }}
-                                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm transition"
-                              >
-                                Reject
-                              </button>
-                            )}
-
-                            {/* Suspend active technician */}
-                            {agent.registrationStatus === 'active' && (
-                              <button
-                                onClick={() => handleSuspendAgent(agent._id)}
-                                className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-650 border border-red-200 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm transition animate-pulse"
-                              >
-                                Suspend
-                              </button>
-                            )}
-
-                            {/* Delete technician record */}
-                            <button
-                              onClick={() => handleDeleteAgent(agent._id)}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-650 hover:border-red-200 border rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm transition"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
                     ))}
-                  {agents.filter((a) => {
-                    if (agentSubView === 'active') return a.registrationStatus === 'active';
-                    if (agentSubView === 'pending') return a.registrationStatus === 'pending';
-                    return ['rejected', 'suspended'].includes(a.registrationStatus);
-                  }).length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="text-center py-10 text-slate-400 font-bold italic">
-                        No specialists found in this category.
-                      </td>
-                    </tr>
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Second Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Service Type Bar Chart */}
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+                  className="bg-white rounded-2xl border border-slate-200/60 p-5">
+                  <p className="text-[9px] font-black uppercase tracking-[0.15em] text-[#8b4513] mb-4">Service Category Distribution</p>
+                  {bookingsByServiceType.length > 0 ? (
+                    <MiniBarChart data={bookingsByServiceType} />
+                  ) : (
+                    <p className="text-xs text-slate-400 italic py-8 text-center">No booking data available</p>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </motion.div>
 
-            {/* ======================================================== */}
-            {/* 1. APPROVE TECHNICIAN PASSCODE ENTRY MODAL */}
-            {/* ======================================================== */}
-            {showApproveModal && selectedAgentForAction && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="inline-block px-2.5 py-0.5 rounded bg-[#f3e2ac]/80 text-[#706439] font-black text-[9px] uppercase tracking-wider">
-                        Security Vault Action
-                      </span>
-                      <h3 className="text-lg font-black text-primary tracking-tight mt-1.5">Approve Care Technician</h3>
-                    </div>
-                    <button 
-                      onClick={() => setShowApproveModal(false)}
-                      className="text-slate-400 hover:text-slate-650 text-sm focus:outline-none"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-slate-500 leading-normal">
-                    You are activating technician credentials for <strong className="font-bold text-slate-800">{selectedAgentForAction.firstName} {selectedAgentForAction.lastName}</strong>.
-                    Please define a secure login passcode which will be securely bcrypt-hashed in our vault.
-                  </p>
-
-                  <form onSubmit={handleApproveAgentWithPasscode} className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Configure Onboarding Passcode *</label>
-                      <div className="relative group">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/60">
-                          <FiLock size={16} />
-                        </span>
-                        <input
-                          type="text"
-                          value={approvePasscode}
-                          onChange={(e) => setApprovePasscode(e.target.value.replace(/\s/g, ''))}
-                          required
-                          minLength={6}
-                          placeholder="Passcode (min 6 characters)"
-                          className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-primary focus:bg-white transition-all font-mono"
+                {/* Completion Gauge */}
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
+                  className="bg-white rounded-2xl border border-slate-200/60 p-5">
+                  <p className="text-[9px] font-black uppercase tracking-[0.15em] text-[#8b4513] mb-4">Service Completion Rate</p>
+                  <div className="flex items-center justify-center gap-8">
+                    <div className="relative w-28 h-28 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-full h-full transform -rotate-90">
+                        <circle cx="56" cy="56" r="46" stroke="#efeeeb" strokeWidth="8" fill="transparent" />
+                        <motion.circle
+                          cx="56" cy="56" r="46" stroke="url(#overviewGaugeGrad)" strokeWidth="8" fill="transparent"
+                          strokeLinecap="round"
+                          strokeDasharray={2 * Math.PI * 46}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 46 }}
+                          animate={{ strokeDashoffset: 2 * Math.PI * 46 * (1 - completedRate / 100) }}
+                          transition={{ duration: 1.2, ease: 'easeOut' }}
                         />
+                        <defs>
+                          <linearGradient id="overviewGaugeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stopColor="#753401" />
+                            <stop offset="100%" stopColor="#d4af37" />
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-xl font-black text-slate-800 font-mono">{completedRate}%</span>
+                        <span className="text-[7px] font-black tracking-widest text-slate-400 uppercase">RATE</span>
                       </div>
                     </div>
-
-                    <div className="pt-2 flex justify-end gap-3 text-xs font-black uppercase tracking-wider">
-                      <button
-                        type="button"
-                        onClick={() => setShowApproveModal(false)}
-                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-655 rounded-lg shadow-inner"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-5 py-2.5 bg-gradient-primary text-on-primary rounded-lg shadow-md hover:opacity-95"
-                      >
-                        ✅ Finalize Approval
-                      </button>
-                    </div>
-                  </form>
-                </motion.div>
-              </div>
-            )}
-
-            {/* ======================================================== */}
-            {/* 2. REJECT TECHNICIAN MODAL */}
-            {/* ======================================================== */}
-            {showRejectModal && selectedAgentForAction && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="inline-block px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 font-black text-[9px] uppercase tracking-wider">
-                        Vetting Filter Board
-                      </span>
-                      <h3 className="text-lg font-black text-primary tracking-tight mt-1.5">Reject Technician Applicant</h3>
-                    </div>
-                    <button 
-                      onClick={() => setShowRejectModal(false)}
-                      className="text-slate-400 hover:text-slate-600 text-sm focus:outline-none"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-slate-500 leading-normal">
-                    Please provide a clear justification why the application submitted by <strong className="font-bold text-slate-800">{selectedAgentForAction.firstName} {selectedAgentForAction.lastName}</strong> is being rejected.
-                  </p>
-
-                  <form onSubmit={handleRejectAgentWithReason} className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Rejection Reason *</label>
-                      <textarea
-                        value={rejectionReasonText}
-                        onChange={(e) => setRejectionReasonText(e.target.value)}
-                        required
-                        rows={3}
-                        placeholder="Candidate address credentials could not be verified / insufficient field experience parameters."
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-primary focus:bg-white transition-all leading-relaxed"
-                      />
-                    </div>
-
-                    <div className="pt-2 flex justify-end gap-3 text-xs font-black uppercase tracking-wider">
-                      <button
-                        type="button"
-                        onClick={() => setShowRejectModal(false)}
-                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-655 rounded-lg shadow-inner"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow-md"
-                      >
-                        🚫 Reject Request
-                      </button>
-                    </div>
-                  </form>
-                </motion.div>
-              </div>
-            )}
-
-            {/* ======================================================== */}
-            {/* 3. VIEW PROFILE DETAILS OVERLAY MODAL */}
-            {/* ======================================================== */}
-            {showViewProfileModal && selectedAgentForAction && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 max-w-lg w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
-                >
-                  <div className="flex justify-between items-start border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      {selectedAgentForAction.profileImage ? (
-                        <img src={selectedAgentForAction.profileImage} alt="" className="w-12 h-12 rounded-full object-cover border" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg uppercase">
-                          {selectedAgentForAction.firstName?.[0]}{selectedAgentForAction.lastName?.[0]}
-                        </div>
-                      )}
-                      <div>
-                        <h3 className="text-base font-black text-slate-800 leading-tight">
-                          {selectedAgentForAction.firstName} {selectedAgentForAction.lastName}
-                        </h3>
-                        <p className="text-[10px] text-primary font-mono tracking-wide mt-0.5">{selectedAgentForAction.agentId}</p>
+                    <div className="space-y-3 text-xs font-semibold">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" /> <span className="text-slate-500">Pending: {bookings.filter(b => b.status === 'pending').length}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" /> <span className="text-slate-500">Active: {bookings.filter(b => ['confirmed', 'in_progress'].includes(b.status)).length}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" /> <span className="text-slate-500">Completed: {stats?.completedBookings || 0}</span>
                       </div>
                     </div>
-                    <button 
-                      onClick={() => setShowViewProfileModal(false)}
-                      className="text-slate-400 hover:text-slate-655 text-sm focus:outline-none"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* Profile Cards */}
-                  <div className="space-y-4 text-xs font-semibold">
-                    {/* General Grid */}
-                    <div className="grid grid-cols-2 gap-4 bg-[#faf9f6] p-4 rounded-2xl border border-slate-100 shadow-inner">
-                      <div>
-                        <p className="text-[9px] font-black text-[#753401]/60 uppercase tracking-widest">Mobile Number</p>
-                        <p className="text-slate-700 font-mono mt-0.5">{selectedAgentForAction.phone}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-black text-[#753401]/60 uppercase tracking-widest">Email Address</p>
-                        <p className="text-slate-700 mt-0.5 truncate">{selectedAgentForAction.email}</p>
-                      </div>
-                    </div>
-
-                    {/* Vetted KYC proofs */}
-                    <div className="bg-[#faf9f6] p-4 rounded-2xl border border-slate-100 shadow-inner space-y-3">
-                      <div className="flex items-center gap-1.5 pb-1.5 border-b border-[#753401]/5 text-[#753401]/80">
-                        <FiShield size={14} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Vetted Document Files</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Aadhaar Card Detail</p>
-                          <p className="text-slate-700 font-mono mt-0.5 tracking-wider">
-                            {selectedAgentForAction.documents?.aadhar ? `XXXX XXXX ${selectedAgentForAction.documents.aadhar.slice(-4)}` : 'Not verified'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">PAN Card Detail</p>
-                          <p className="text-slate-700 font-mono mt-0.5 uppercase font-black">
-                            {selectedAgentForAction.documents?.panCard || 'Not verified'}
-                          </p>
-                        </div>
-                      </div>
-                      {selectedAgentForAction.licenseNumber && (
-                        <div className="pt-2 border-t border-slate-200/40">
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Driving License Number</p>
-                          <p className="text-slate-700 font-mono mt-0.5">{selectedAgentForAction.licenseNumber}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Permanent Address */}
-                    <div className="bg-[#faf9f6] p-4 rounded-2xl border border-slate-100 shadow-inner space-y-2">
-                      <div className="flex items-center gap-1.5 pb-1.5 border-b border-[#753401]/5 text-[#753401]/80">
-                        <FiMapPin size={14} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Permanent Address</span>
-                      </div>
-                      {selectedAgentForAction.address ? (
-                        <div className="text-slate-650 leading-relaxed">
-                          <p>{selectedAgentForAction.address.street}</p>
-                          <p className="mt-0.5">{selectedAgentForAction.address.city}, {selectedAgentForAction.address.state} - <span className="font-mono font-bold">{selectedAgentForAction.address.pincode}</span></p>
-                          <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold">{selectedAgentForAction.address.country || 'India'}</p>
-                        </div>
-                      ) : (
-                        <p className="text-slate-400 italic">No address provided</p>
-                      )}
-                    </div>
-
-                    {/* Audit Timestamps */}
-                    <div className="text-[10px] text-slate-400 bg-slate-50 p-3.5 rounded-xl border flex flex-col gap-1">
-                      <p>• Created and Applied: {new Date(selectedAgentForAction.createdAt).toLocaleString()}</p>
-                      {selectedAgentForAction.isApproved && selectedAgentForAction.approvalDate && (
-                        <p className="text-emerald-600 font-bold">• Approved Vetted Date: {new Date(selectedAgentForAction.approvalDate).toLocaleString()}</p>
-                      )}
-                      {selectedAgentForAction.registrationStatus === 'rejected' && (
-                        <p className="text-amber-600 font-bold">• Rejection reason details: {selectedAgentForAction.rejectedReason}</p>
-                      )}
-                      {selectedAgentForAction.registrationStatus === 'suspended' && (
-                        <p className="text-red-650 font-bold">• Account suspended, remote access terminated.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pt-4 flex justify-end text-xs font-black uppercase tracking-wider border-t border-slate-100">
-                    <button
-                      onClick={() => setShowViewProfileModal(false)}
-                      className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-655 rounded-xl shadow-sm"
-                    >
-                      Close Viewer
-                    </button>
                   </div>
                 </motion.div>
               </div>
-            )}
 
-            {/* ======================================================== */}
-            {/* 4. ONBOARD NEW AGENT DIRECT MODAL DIALOGUE */}
-            {/* ======================================================== */}
-            {showAddAgentModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-[#faf9f6] rounded-3xl border border-slate-200 p-6 md:p-8 max-w-xl w-full shadow-2xl space-y-6 my-8 max-h-[90vh] overflow-y-auto"
-                >
-                  <div className="flex justify-between items-start border-b border-[#753401]/10 pb-4">
-                    <div>
-                      <span className="inline-block px-2.5 py-0.5 rounded bg-primary/10 text-primary font-black text-[9px] uppercase tracking-wider">
-                        Workforce Control
-                      </span>
-                      <h3 className="text-xl font-black text-primary tracking-tight mt-1.5">Direct Specialist Onboarding</h3>
-                    </div>
-                    <button 
-                      onClick={() => setShowAddAgentModal(false)}
-                      className="text-slate-400 hover:text-slate-600 text-lg focus:outline-none"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleCreateAgent} className="space-y-6">
-                    {/* circular image slot */}
-                    <div className="space-y-2">
-                      <label className="block text-[10px] font-black text-secondary uppercase tracking-wider pl-1 flex items-center gap-1">
-                        <FiCamera size={14} className="text-primary" /> Profile Photo *
-                      </label>
-
-                      <div 
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`relative overflow-hidden cursor-pointer border-2 border-dashed rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-5 transition-all duration-300 bg-white ${
-                          isDragging 
-                            ? 'border-primary bg-primary/5 scale-[1.01]' 
-                            : 'border-[#753401]/15 hover:border-primary hover:shadow-sm'
-                        }`}
-                      >
-                        <input 
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleFileSelect}
-                          accept="image/jpeg,image/png,image/webp"
-                          className="hidden"
-                        />
-
-                        <div className="relative w-16 h-16 rounded-full flex-shrink-0 border-4 border-slate-100 shadow-md bg-slate-50 flex items-center justify-center overflow-hidden">
-                          {filePreviewUrl || agentForm.profileImage ? (
-                            <img src={filePreviewUrl || agentForm.profileImage} alt="Avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <FiUploadCloud size={20} className="text-slate-400" />
-                          )}
-                          {isUploading && (
-                            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center">
-                              <div className="animate-spin rounded-full h-5 w-5 border-2 border-t-transparent border-white" />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex-1 text-center sm:text-left space-y-1 w-full text-xs font-semibold">
-                          <h5 className="font-bold text-xs text-slate-800">Upload Technician Avatar</h5>
-                          <p className="text-[11px] text-slate-500">Drag/drop file here or click to browse.</p>
-                          <p className="text-[9px] text-slate-400">Max size 5MB. Progressives are auto-square compressed.</p>
-
-                          {isUploading && (
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2 shadow-inner">
-                              <motion.div 
-                                className="h-full bg-gradient-primary rounded-full"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${uploadProgress}%` }}
-                                transition={{ duration: 0.1 }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* form rows */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-secondary uppercase tracking-wider pl-1">First Name *</label>
-                        <input
-                          type="text"
-                          name="firstName"
-                          value={agentForm.firstName}
-                          onChange={handleAgentFormChange}
-                          required
-                          placeholder="First name"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-secondary uppercase tracking-wider pl-1">Last Name *</label>
-                        <input
-                          type="text"
-                          name="lastName"
-                          value={agentForm.lastName}
-                          onChange={handleAgentFormChange}
-                          required
-                          placeholder="Last name"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-secondary uppercase tracking-wider pl-1">Contact Email *</label>
-                        <input
-                          type="email"
-                          name="email"
-                          value={agentForm.email}
-                          onChange={handleAgentFormChange}
-                          required
-                          placeholder="specialist@residence.com"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-secondary uppercase tracking-wider pl-1">Contact Phone *</label>
-                        <input
-                          type="tel"
-                          name="phone"
-                          value={agentForm.phone}
-                          onChange={handleAgentFormChange}
-                          required
-                          placeholder="10-digit number"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-secondary uppercase tracking-wider pl-1">Configure Passcode *</label>
-                        <input
-                          type="text"
-                          name="passcode"
-                          value={agentForm.passcode}
-                          onChange={handleAgentFormChange}
-                          required
-                          minLength={6}
-                          placeholder="Passcode (min 6 characters)"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-secondary uppercase tracking-wider pl-1">Agent ID (Read-only)</label>
-                        <input
-                          type="text"
-                          disabled
-                          placeholder="Auto-generated by Security Vault"
-                          className="w-full px-4 py-3 border rounded-xl bg-slate-100 text-slate-400 text-xs font-bold shadow-inner cursor-not-allowed italic"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Vetted KYC proofs */}
-                    <div className="bg-white border border-[#753401]/10 rounded-2xl p-5 space-y-4">
-                      <div className="flex items-center gap-1.5 pb-2 border-b border-[#753401]/5 text-primary">
-                        <FiFileText size={16} />
-                        <span className="text-[11px] font-black uppercase tracking-wider">KYC Document Vetting</span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black text-[#753401]/60 uppercase tracking-wider pl-1">Aadhaar Number *</label>
-                          <input
-                            type="text"
-                            value={aadhaarInput}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/\D/g, '').slice(0, 12);
-                              const formatted = raw.replace(/(\d{4})(?=\d)/g, '$1 ');
-                              setAadhaarInput(formatted);
-                              setAgentForm(prev => ({ ...prev, aadharNumber: formatted }));
-                            }}
-                            required
-                            placeholder="XXXX XXXX XXXX"
-                            className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-bold shadow-sm font-mono tracking-wider"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black text-[#753401]/60 uppercase tracking-wider pl-1">PAN Number *</label>
-                          <input
-                            type="text"
-                            value={panInput}
-                            onChange={(e) => {
-                              const clean = e.target.value.toUpperCase().trim().slice(0, 10);
-                              setPanInput(clean);
-                              setAgentForm(prev => ({ ...prev, panNumber: clean }));
-                            }}
-                            required
-                            placeholder="ABCDE1234F"
-                            className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-black shadow-sm font-mono tracking-widest uppercase"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-[#753401]/60 uppercase tracking-wider pl-1">Driving License (Optional)</label>
-                        <input
-                          type="text"
-                          name="licenseNumber"
-                          value={agentForm.licenseNumber || ''}
-                          onChange={handleAgentFormChange}
-                          placeholder="DL-XXXXXXXXXXXXX"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Address Block */}
-                    <div className="space-y-3 bg-white border border-[#753401]/10 rounded-2xl p-5">
-                      <div className="flex items-center gap-1.5 pb-2 border-b border-[#753401]/5 text-primary">
-                        <FiMapPin size={16} />
-                        <span className="text-[11px] font-black uppercase tracking-wider font-semibold">Specialist Permanent Address</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold text-[#753401]/60 uppercase pl-1">Street Address</label>
-                        <input
-                          type="text"
-                          name="street"
-                          value={agentForm.address?.street || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setAgentForm(prev => ({
-                              ...prev,
-                              address: { ...(prev.address || {}), street: val }
-                            }));
-                          }}
-                          required
-                          placeholder="Flat/House No., Building Name, Street Area"
-                          className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-bold text-[#753401]/60 uppercase pl-1">City</label>
-                          <input
-                            type="text"
-                            name="city"
-                            value={agentForm.address?.city || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setAgentForm(prev => ({
-                                ...prev,
-                                address: { ...(prev.address || {}), city: val }
-                              }));
-                            }}
-                            required
-                            placeholder="Bangalore"
-                            className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-bold text-[#753401]/60 uppercase pl-1">State</label>
-                          <input
-                            type="text"
-                            name="state"
-                            value={agentForm.address?.state || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setAgentForm(prev => ({
-                                ...prev,
-                                address: { ...(prev.address || {}), state: val }
-                              }));
-                            }}
-                            required
-                            placeholder="Karnataka"
-                            className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-semibold shadow-sm"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-bold text-[#753401]/60 uppercase pl-1">Pincode</label>
-                          <input
-                            type="text"
-                            name="pincode"
-                            value={agentForm.address?.pincode || ''}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                              setAgentForm(prev => ({
-                                ...prev,
-                                address: { ...(prev.address || {}), pincode: val }
-                              }));
-                            }}
-                            required
-                            placeholder="560064"
-                            className="w-full px-4 py-3 border border-[#753401]/10 rounded-xl bg-white focus:outline-none focus:border-primary text-xs font-bold shadow-sm font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* buttons */}
-                    <div className="pt-2 flex justify-end gap-3 text-xs font-black uppercase tracking-wider">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddAgentModal(false)}
-                        className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-655 rounded-xl shadow-inner cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-8 py-3.5 bg-gradient-primary text-on-primary rounded-xl shadow-md hover:opacity-95 cursor-pointer"
-                      >
-                        ✅ Register Specialist
-                      </button>
-                    </div>
-                  </form>
-                </motion.div>
-              </div>
-            )}
-          </div>
-          )}
-
-          {/* Recent Bookings */}
-          {currentView === 'bookings' && (
-          <div className="glass rounded-lg p-8">
-            <h2 className="text-2xl font-bold mb-6">Booking Queue</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b-2 border-gray-200">
-                    <th className="text-left py-3 px-4 font-semibold">Booking ID</th>
-                    <th className="text-left py-3 px-4 font-semibold">Customer</th>
-                    <th className="text-left py-3 px-4 font-semibold">Service Type</th>
-                    <th className="text-left py-3 px-4 font-semibold">Status</th>
-                    <th className="text-left py-3 px-4 font-semibold">Agent</th>
-                    <th className="text-left py-3 px-4 font-semibold">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bookings.map((booking) => (
-                    <tr key={booking._id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4">{booking.bookingId}</td>
-                      <td className="py-3 px-4">{booking.customer?.firstName}</td>
-                      <td className="py-3 px-4 capitalize">{booking.serviceType.replace(/_/g, ' ')}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                          {booking.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        {booking.assignedAgent ? (
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-green-700 text-sm">
-                              {booking.assignedAgent?.firstName} {booking.assignedAgent?.lastName}
-                            </span>
-                            <span className="text-[10px] text-gray-500 font-medium">({booking.assignedAgent?.agentId})</span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-500 italic text-sm">Unassigned</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        {!['completed', 'cancelled'].includes(booking.status) && (
-                          <div className="flex items-center gap-2">
-                            {booking.assignedAgent ? (
-                              <>
-                                <button
-                                  onClick={() => setSelectedBookingForAssign(booking)}
-                                  className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-semibold hover:opacity-90 transition shadow-sm"
-                                >
-                                  Reassign
-                                </button>
-                                <button
-                                  onClick={() => handleUnassignAgent(booking._id)}
-                                  className="px-3 py-1.5 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-lg text-xs font-semibold shadow-sm transition"
-                                >
-                                  Unassign
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={() => setSelectedBookingForAssign(booking)}
-                                className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-semibold hover:opacity-90 transition shadow-sm"
-                              >
-                                Assign Agent
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          )}
-
-          {/* Assign Agent Modal */}
-          {selectedBookingForAssign && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl"
-              >
-                <h3 className="text-2xl font-bold mb-4">Assign Agent</h3>
-                <p className="text-gray-600 mb-4">
-                  Booking ID: <span className="font-semibold">{selectedBookingForAssign.bookingId}</span>
-                </p>
-                <p className="text-gray-600 mb-6">
-                  Customer: <span className="font-semibold">{selectedBookingForAssign.customer?.firstName}</span>
-                </p>
-
-                <div className="mb-6">
-                  <label className="block text-sm font-semibold mb-2">Select Agent</label>
-                  <select
-                    value={selectedAgentId}
-                    onChange={(e) => setSelectedAgentId(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">-- Choose Agent --</option>
-                    {agents
-                      .filter((agent) => agent.isActive)
-                      .map((agent) => (
-                        <option key={agent._id} value={agent._id}>
-                          {agent.firstName} {agent.lastName} ({agent.agentId})
-                        </option>
-                      ))}
-                  </select>
+              {/* Recent Bookings Quick View */}
+              <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+                className="bg-white rounded-2xl border border-slate-200/60 p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.15em] text-[#8b4513]">Recent Service Requests</p>
+                  <button onClick={() => setActiveTab('bookings')} className="text-[9px] font-black uppercase tracking-wider text-[#8b4513] hover:underline">
+                    View All →
+                  </button>
                 </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setSelectedBookingForAssign(null);
-                      setSelectedAgentId('');
-                    }}
-                    disabled={isAssigning}
-                    className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAssignAgent}
-                    disabled={isAssigning || !selectedAgentId}
-                    className="flex-1 px-4 py-3 bg-primary text-on-primary rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isAssigning ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-on-primary" />
-                        Assigning...
-                      </>
-                    ) : (
-                      'Assign Agent'
-                    )}
-                  </button>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                        <th className="py-2.5 px-3 text-left">ID</th>
+                        <th className="py-2.5 px-3 text-left">Client</th>
+                        <th className="py-2.5 px-3 text-left">Service</th>
+                        <th className="py-2.5 px-3 text-left">Status</th>
+                        <th className="py-2.5 px-3 text-left">Agent</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-semibold text-slate-600">
+                      {bookings.slice(0, 5).map(b => (
+                        <tr key={b._id} className="border-b border-slate-50 hover:bg-[#faf9f6]/60 transition-colors">
+                          <td className="py-2.5 px-3 font-mono text-[10px] font-bold text-slate-500">{b.bookingId}</td>
+                          <td className="py-2.5 px-3">{b.customer?.firstName || 'N/A'}</td>
+                          <td className="py-2.5 px-3 capitalize text-[10px]">{b.serviceType?.replace(/_/g, ' ')}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                              b.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              b.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              b.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>{b.status}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-[10px]">{b.assignedAgent ? `${b.assignedAgent.firstName} ${b.assignedAgent.lastName}` : <span className="italic text-slate-400">Unassigned</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </motion.div>
             </div>
           )}
 
-          {currentView === 'analytics' && (
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="glass rounded-lg p-8">
-                <p className="text-gray-600 text-sm mb-2">Completion Rate</p>
-                <p className="text-4xl font-bold text-primary">{completedRate}%</p>
+          {/* ═══════════ TAB: CUSTOMERS ═══════════ */}
+          {activeTab === 'customers' && (
+            <div className="space-y-6">
+              {/* Search Bar */}
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex items-center gap-3">
+                <FiSearch size={16} className="text-slate-400" />
+                <input
+                  type="text" placeholder="Search customers by name, email or phone..."
+                  value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)}
+                  className="flex-1 text-xs font-semibold bg-transparent focus:outline-none placeholder:text-slate-300"
+                />
+                {customerSearch && <button onClick={() => setCustomerSearch('')} className="text-slate-300 hover:text-slate-500"><FiX size={14} /></button>}
               </div>
-              <div className="glass rounded-lg p-8">
-                <p className="text-gray-600 text-sm mb-2">Pending Bookings</p>
-                <p className="text-4xl font-bold text-primary">{pendingBookings}</p>
-              </div>
-              <div className="glass rounded-lg p-8">
-                <p className="text-gray-600 text-sm mb-2">Active Agents</p>
-                <p className="text-4xl font-bold text-primary">{stats?.activeAgents || 0}</p>
-              </div>
-            </div>
 
-            <div className="glass rounded-lg p-8">
-              <h2 className="text-2xl font-bold mb-6">Service Performance</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <p className="text-gray-600 text-sm mb-2">Total Platform Bookings</p>
-                  <div className="h-3 rounded-full bg-primary/10 overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, stats?.totalBookings || 0)}%` }} />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-2">Completed Services</p>
-                  <div className="h-3 rounded-full bg-primary/10 overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${completedRate}%` }} />
-                  </div>
+              {/* Customer Grid */}
+              <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b-2 border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="py-3 px-4 text-left">Customer</th>
+                        <th className="py-3 px-4 text-left">Email</th>
+                        <th className="py-3 px-4 text-left">Phone</th>
+                        <th className="py-3 px-4 text-left">Membership</th>
+                        <th className="py-3 px-4 text-left">Status</th>
+                        <th className="py-3 px-4 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-semibold text-slate-600">
+                      {filteredCustomers.length === 0 ? (
+                        <tr><td colSpan={6} className="text-center py-10 text-slate-400 italic">No customers found</td></tr>
+                      ) : filteredCustomers.map(c => (
+                        <tr key={c._id} className="border-b border-slate-50 hover:bg-[#faf9f6]/60 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-[#8b4513]/10 text-[#8b4513] flex items-center justify-center text-[10px] font-black uppercase">
+                                {c.firstName?.[0]}{c.lastName?.[0]}
+                              </div>
+                              <span className="font-bold text-slate-700">{c.firstName} {c.lastName}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-[10px] text-slate-500">{c.email}</td>
+                          <td className="py-3 px-4 font-mono text-[10px]">{c.phone}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                              c.membershipStatus === 'platinum' ? 'bg-slate-800 text-white border-slate-700' :
+                              c.membershipStatus === 'gold' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              c.membershipStatus === 'premium' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                              'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}>{c.membershipStatus || 'standard'}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                              c.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'
+                            }`}>{c.isActive ? 'Active' : 'Suspended'}</span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => handleSuspendCustomer(c._id)}
+                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border shadow-sm transition-all ${
+                                c.isActive
+                                  ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              }`}
+                            >
+                              {c.isActive ? 'Suspend' : 'Reactivate'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
-          </div>
           )}
-        </div>
-      </section>
+
+          {/* ═══════════ TAB: WORKFORCE ═══════════ */}
+          {activeTab === 'workforce' && (
+            <div className="space-y-6">
+              <div className="bg-white/60 backdrop-blur-2xl rounded-2xl border border-slate-200/60 p-6">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 pb-4 border-b border-slate-200/40">
+                  <div>
+                    <h2 className="text-lg font-black text-[#6c2f00] tracking-tight">Workforce Approvals & Fleet Control</h2>
+                    <p className="text-[#753401]/60 text-[10px] font-semibold mt-1">Review technicians, approve credentials, manage fleet.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setAgentForm({ firstName: '', lastName: '', email: '', phone: '', passcode: '', profileImage: '', aadharNumber: '', panNumber: '' });
+                      setEmailVerified(true); setEmailInput(''); setFilePreviewUrl(''); setAadhaarInput(''); setPanInput('');
+                      setShowAddAgentModal(true);
+                    }}
+                    className="px-4 py-2.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-xl text-[10px] font-bold uppercase tracking-wider shadow-md hover:shadow-lg hover:translate-y-[-1px] active:scale-[0.98] transition-all flex items-center gap-1.5 self-start cursor-pointer"
+                  >
+                    ➕ Onboard Specialist
+                  </button>
+                </div>
+
+                {/* Sub-Tabs */}
+                <div className="flex gap-6 border-b border-slate-100 mb-6 font-semibold">
+                  {[
+                    { id: 'active', label: 'Active Fleet', count: agents.filter(a => a.registrationStatus === 'active').length },
+                    { id: 'pending', label: 'Pending', count: agents.filter(a => a.registrationStatus === 'pending').length, pulse: true },
+                    { id: 'rejected_suspended', label: 'Rejected / Suspended', count: agents.filter(a => ['rejected', 'suspended'].includes(a.registrationStatus)).length },
+                  ].map(sub => (
+                    <button key={sub.id} onClick={() => setAgentSubView(sub.id)}
+                      className={`pb-3 text-[10px] font-black uppercase tracking-wider transition-colors relative flex items-center gap-1.5 ${
+                        agentSubView === sub.id ? 'text-[#8b4513]' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      {sub.label} ({sub.count})
+                      {sub.pulse && sub.count > 0 && (
+                        <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center animate-pulse">{sub.count}</span>
+                      )}
+                      {agentSubView === sub.id && <motion.div layoutId="agentSubTab" className="absolute bottom-0 inset-x-0 h-0.5 bg-[#8b4513]" />}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Agent Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b-2 border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="py-3 px-3">Photo</th><th className="py-3 px-3">ID</th><th className="py-3 px-3">Name</th>
+                        <th className="py-3 px-3">Contact</th><th className="py-3 px-3">KYC</th><th className="py-3 px-3">Status</th>
+                        <th className="py-3 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-semibold text-slate-700">
+                      {agents.filter(a => {
+                        if (agentSubView === 'active') return a.registrationStatus === 'active';
+                        if (agentSubView === 'pending') return a.registrationStatus === 'pending';
+                        return ['rejected', 'suspended'].includes(a.registrationStatus);
+                      }).map(agent => (
+                        <tr key={agent._id} className="border-b border-slate-50 hover:bg-[#faf9f6]/60 transition-colors">
+                          <td className="py-3 px-3">
+                            {agent.profileImage ? <img src={agent.profileImage} alt="" className="h-9 w-9 rounded-full object-cover border shadow-sm" /> :
+                              <div className="h-9 w-9 rounded-full bg-[#8b4513]/10 text-[#8b4513] flex items-center justify-center font-bold text-[10px] uppercase">{agent.firstName?.[0]}{agent.lastName?.[0]}</div>}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-[#8b4513] text-[10px]">{agent.agentId}</td>
+                          <td className="py-3 px-3 font-bold text-slate-800">{agent.firstName} {agent.lastName}</td>
+                          <td className="py-3 px-3 text-[10px]">
+                            <p className="text-slate-600">{agent.email}</p>
+                            <p className="text-slate-400 font-mono mt-0.5">{agent.phone}</p>
+                          </td>
+                          <td className="py-3 px-3 font-mono text-[10px] text-slate-500">
+                            <p>AADHAAR: XXXX {agent.documents?.aadhar?.slice(-4) || 'N/A'}</p>
+                            <p>PAN: {agent.documents?.panCard || 'N/A'}</p>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider ${
+                              agent.registrationStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              agent.registrationStatus === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                              agent.registrationStatus === 'suspended' ? 'bg-red-50 text-red-600 border border-red-200' :
+                              'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>{agent.registrationStatus}</span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <button onClick={() => { setSelectedAgentForAction(agent); setShowViewProfileModal(true); }}
+                                className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-slate-200/60 shadow-sm transition">Details</button>
+                              {['pending', 'rejected', 'suspended'].includes(agent.registrationStatus) && (
+                                <button onClick={() => { setSelectedAgentForAction(agent); setApprovePasscode(''); setShowApproveModal(true); }}
+                                  className="px-2.5 py-1.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm transition">Approve</button>
+                              )}
+                              {agent.registrationStatus === 'pending' && (
+                                <button onClick={() => { setSelectedAgentForAction(agent); setRejectionReasonText(''); setShowRejectModal(true); }}
+                                  className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-[9px] font-black uppercase shadow-sm transition">Reject</button>
+                              )}
+                              {agent.registrationStatus === 'active' && (
+                                <button onClick={() => handleSuspendAgent(agent._id)}
+                                  className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-[9px] font-black uppercase shadow-sm transition">Suspend</button>
+                              )}
+                              <button onClick={() => handleDeleteAgent(agent._id)}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border rounded-lg text-[9px] font-black uppercase shadow-sm transition">Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {agents.filter(a => {
+                        if (agentSubView === 'active') return a.registrationStatus === 'active';
+                        if (agentSubView === 'pending') return a.registrationStatus === 'pending';
+                        return ['rejected', 'suspended'].includes(a.registrationStatus);
+                      }).length === 0 && (
+                        <tr><td colSpan={7} className="text-center py-10 text-slate-400 italic">No specialists in this category</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Workforce Modals - Approve */}
+              {showApproveModal && selectedAgentForAction && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="inline-block px-2.5 py-0.5 rounded bg-[#f3e2ac]/80 text-[#706439] font-black text-[9px] uppercase tracking-wider">Security Vault</span>
+                        <h3 className="text-lg font-black text-[#6c2f00] mt-1.5">Approve Technician</h3>
+                      </div>
+                      <button onClick={() => setShowApproveModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                    </div>
+                    <p className="text-xs text-slate-500">Activating credentials for <strong>{selectedAgentForAction.firstName} {selectedAgentForAction.lastName}</strong>. Set a secure login passcode.</p>
+                    <form onSubmit={handleApproveAgentWithPasscode} className="space-y-4">
+                      <div className="relative">
+                        <FiLock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8b4513]/50" size={14} />
+                        <input type="text" value={approvePasscode} onChange={e => setApprovePasscode(e.target.value.replace(/\s/g, ''))} required minLength={6}
+                          placeholder="Passcode (min 6 chars)" className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-[#8b4513] font-mono" />
+                      </div>
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={() => setShowApproveModal(false)} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase">Cancel</button>
+                        <button type="submit" className="px-5 py-2.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-lg text-[10px] font-black uppercase shadow-md">✅ Approve</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Workforce Modals - Reject */}
+              {showRejectModal && selectedAgentForAction && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="inline-block px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 font-black text-[9px] uppercase tracking-wider">Vetting Board</span>
+                        <h3 className="text-lg font-black text-[#6c2f00] mt-1.5">Reject Applicant</h3>
+                      </div>
+                      <button onClick={() => setShowRejectModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                    </div>
+                    <form onSubmit={handleRejectAgentWithReason} className="space-y-4">
+                      <textarea value={rejectionReasonText} onChange={e => setRejectionReasonText(e.target.value)} required rows={3}
+                        placeholder="Reason for rejection..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#8b4513]" />
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={() => setShowRejectModal(false)} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase">Cancel</button>
+                        <button type="submit" className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-black uppercase shadow-md">🚫 Reject</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Workforce Modals - View Profile */}
+              {showViewProfileModal && selectedAgentForAction && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                    className="bg-white rounded-2xl border border-slate-200 p-6 max-w-lg w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-3">
+                        {selectedAgentForAction.profileImage ? <img src={selectedAgentForAction.profileImage} alt="" className="w-11 h-11 rounded-full object-cover border" /> :
+                          <div className="w-11 h-11 rounded-full bg-[#8b4513]/10 text-[#8b4513] flex items-center justify-center font-bold text-sm uppercase">{selectedAgentForAction.firstName?.[0]}{selectedAgentForAction.lastName?.[0]}</div>}
+                        <div>
+                          <h3 className="text-sm font-black text-slate-800">{selectedAgentForAction.firstName} {selectedAgentForAction.lastName}</h3>
+                          <p className="text-[9px] text-[#8b4513] font-mono">{selectedAgentForAction.agentId}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowViewProfileModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 bg-[#faf9f6] p-4 rounded-xl border border-slate-100 text-xs font-semibold">
+                      <div><p className="text-[8px] font-black text-[#753401]/60 uppercase">Phone</p><p className="font-mono mt-0.5">{selectedAgentForAction.phone}</p></div>
+                      <div><p className="text-[8px] font-black text-[#753401]/60 uppercase">Email</p><p className="mt-0.5 truncate">{selectedAgentForAction.email}</p></div>
+                    </div>
+                    <div className="bg-[#faf9f6] p-4 rounded-xl border border-slate-100 text-xs font-semibold space-y-2">
+                      <p className="text-[8px] font-black text-[#753401]/80 uppercase flex items-center gap-1"><FiShield size={12} /> KYC Documents</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><p className="text-[8px] text-slate-400 uppercase">Aadhaar</p><p className="font-mono mt-0.5">XXXX XXXX {selectedAgentForAction.documents?.aadhar?.slice(-4) || 'N/A'}</p></div>
+                        <div><p className="text-[8px] text-slate-400 uppercase">PAN</p><p className="font-mono mt-0.5 uppercase font-black">{selectedAgentForAction.documents?.panCard || 'N/A'}</p></div>
+                      </div>
+                    </div>
+                    <div className="text-[9px] text-slate-400 bg-slate-50 p-3 rounded-xl border space-y-0.5">
+                      <p>• Applied: {new Date(selectedAgentForAction.createdAt).toLocaleString()}</p>
+                      {selectedAgentForAction.registrationStatus === 'rejected' && <p className="text-amber-600 font-bold">• Reason: {selectedAgentForAction.rejectedReason}</p>}
+                    </div>
+                    <div className="pt-2 flex justify-end border-t border-slate-100">
+                      <button onClick={() => setShowViewProfileModal(false)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase">Close</button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Workforce Modals - Add Agent */}
+              {showAddAgentModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                    className="bg-[#faf9f6] rounded-2xl border border-slate-200 p-6 max-w-xl w-full shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-start border-b border-[#753401]/10 pb-4">
+                      <div><span className="inline-block px-2.5 py-0.5 rounded bg-[#8b4513]/10 text-[#8b4513] font-black text-[9px] uppercase tracking-wider">Workforce Control</span>
+                        <h3 className="text-lg font-black text-[#6c2f00] mt-1.5">Direct Specialist Onboarding</h3></div>
+                      <button onClick={() => setShowAddAgentModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+                    </div>
+                    <form onSubmit={handleCreateAgent} className="space-y-4">
+                      {/* Avatar Upload */}
+                      <div onClick={() => fileInputRef.current?.click()}
+                        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={e => { e.preventDefault(); setIsDragging(false); }}
+                        onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) processSelectedFile(f); }}
+                        className={`border-2 border-dashed rounded-xl p-4 flex items-center gap-4 cursor-pointer transition-all bg-white ${isDragging ? 'border-[#8b4513] bg-[#8b4513]/5' : 'border-[#753401]/15 hover:border-[#8b4513]'}`}>
+                        <input type="file" ref={fileInputRef} onChange={e => { const f = e.target.files?.[0]; if (f) processSelectedFile(f); }} accept="image/*" className="hidden" />
+                        <div className="w-14 h-14 rounded-full border-4 border-slate-100 shadow-md bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {filePreviewUrl || agentForm.profileImage ? <img src={filePreviewUrl || agentForm.profileImage} alt="" className="w-full h-full object-cover" /> : <FiUploadCloud size={18} className="text-slate-400" />}
+                        </div>
+                        <div className="text-xs"><p className="font-bold text-slate-700">Upload Avatar</p><p className="text-[10px] text-slate-400">JPG, PNG, WEBP — Max 5MB</p></div>
+                      </div>
+
+                      {/* Form Fields */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { name: 'firstName', label: 'First Name', placeholder: 'First name', type: 'text' },
+                          { name: 'lastName', label: 'Last Name', placeholder: 'Last name', type: 'text' },
+                          { name: 'email', label: 'Email', placeholder: 'email@domain.com', type: 'email' },
+                          { name: 'phone', label: 'Phone', placeholder: '10-digit', type: 'tel' },
+                          { name: 'passcode', label: 'Passcode', placeholder: 'Min 6 chars', type: 'text' },
+                        ].map(field => (
+                          <div key={field.name} className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-1">{field.label} *</label>
+                            <input type={field.type} name={field.name} value={agentForm[field.name]} onChange={handleAgentFormChange} required minLength={field.name === 'passcode' ? 6 : undefined}
+                              placeholder={field.placeholder} className="w-full px-3 py-2.5 border border-[#753401]/10 rounded-xl bg-white text-xs font-semibold focus:outline-none focus:border-[#8b4513] shadow-sm" />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* KYC */}
+                      <div className="bg-white border border-[#753401]/10 rounded-xl p-4 space-y-3">
+                        <p className="text-[10px] font-black text-[#8b4513] uppercase tracking-wider flex items-center gap-1"><FiFileText size={12} /> KYC Documents</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase pl-1">Aadhaar *</label>
+                            <input type="text" value={aadhaarInput}
+                              onChange={e => { const raw = e.target.value.replace(/\D/g, '').slice(0, 12); setAadhaarInput(raw.replace(/(\d{4})(?=\d)/g, '$1 ')); setAgentForm(f => ({ ...f, aadharNumber: raw.replace(/(\d{4})(?=\d)/g, '$1 ') })); }}
+                              required placeholder="XXXX XXXX XXXX" className="w-full px-3 py-2.5 border border-[#753401]/10 rounded-xl bg-white text-xs font-bold font-mono focus:outline-none focus:border-[#8b4513] shadow-sm" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase pl-1">PAN *</label>
+                            <input type="text" value={panInput}
+                              onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10); setPanInput(v); setAgentForm(f => ({ ...f, panNumber: v })); }}
+                              required placeholder="ABCDE1234F" className="w-full px-3 py-2.5 border border-[#753401]/10 rounded-xl bg-white text-xs font-black font-mono uppercase focus:outline-none focus:border-[#8b4513] shadow-sm" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-3 pt-2">
+                        <button type="button" onClick={() => setShowAddAgentModal(false)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase">Cancel</button>
+                        <button type="submit" className="px-6 py-2.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-xl text-[10px] font-black uppercase shadow-md">✅ Register</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══════════ TAB: BOOKINGS ═══════════ */}
+          {activeTab === 'bookings' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b-2 border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="py-3 px-4 text-left">Booking ID</th>
+                        <th className="py-3 px-4 text-left">Customer</th>
+                        <th className="py-3 px-4 text-left">Service</th>
+                        <th className="py-3 px-4 text-left">Date</th>
+                        <th className="py-3 px-4 text-left">Status</th>
+                        <th className="py-3 px-4 text-left">Agent</th>
+                        <th className="py-3 px-4 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-semibold text-slate-600">
+                      {bookings.length === 0 ? (
+                        <tr><td colSpan={7} className="text-center py-10 text-slate-400 italic">No bookings found</td></tr>
+                      ) : bookings.map(b => (
+                        <tr key={b._id} className="border-b border-slate-50 hover:bg-[#faf9f6]/60 transition-colors">
+                          <td className="py-3 px-4 font-mono text-[10px] font-bold text-slate-500">{b.bookingId}</td>
+                          <td className="py-3 px-4 font-bold text-slate-700">{b.customer?.firstName || 'N/A'}</td>
+                          <td className="py-3 px-4 capitalize text-[10px]">{b.serviceType?.replace(/_/g, ' ')}</td>
+                          <td className="py-3 px-4 text-[10px] text-slate-400">{b.bookingDate ? new Date(b.bookingDate).toLocaleDateString() : '—'}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                              b.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              b.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              b.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>{b.status}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {b.assignedAgent ? (
+                              <div><span className="font-bold text-emerald-700 text-[10px]">{b.assignedAgent.firstName} {b.assignedAgent.lastName}</span>
+                              <p className="text-[8px] text-slate-400 font-mono">({b.assignedAgent.agentId})</p></div>
+                            ) : <span className="italic text-slate-400 text-[10px]">Unassigned</span>}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {!['completed', 'cancelled'].includes(b.status) && (
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button onClick={() => setSelectedBookingForAssign(b)}
+                                  className="px-2.5 py-1.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-lg text-[9px] font-black uppercase shadow-sm transition">
+                                  {b.assignedAgent ? 'Reassign' : 'Assign'}
+                                </button>
+                                {b.assignedAgent && (
+                                  <button onClick={() => handleUnassignAgent(b._id)}
+                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border rounded-lg text-[9px] font-black uppercase shadow-sm transition">Unassign</button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Assign Agent Modal */}
+              {selectedBookingForAssign && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                    <h3 className="text-lg font-black text-[#6c2f00]">Assign Agent</h3>
+                    <p className="text-xs text-slate-500">Booking: <strong>{selectedBookingForAssign.bookingId}</strong> — {selectedBookingForAssign.customer?.firstName}</p>
+                    <select value={selectedAgentId} onChange={e => setSelectedAgentId(e.target.value)}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#8b4513]">
+                      <option value="">-- Select Agent --</option>
+                      {agents.filter(a => a.isActive || a.registrationStatus === 'active').map(a => (
+                        <option key={a._id} value={a._id}>{a.firstName} {a.lastName} ({a.agentId})</option>
+                      ))}
+                    </select>
+                    <div className="flex gap-3">
+                      <button onClick={() => { setSelectedBookingForAssign(null); setSelectedAgentId(''); }} disabled={isAssigning}
+                        className="flex-1 px-4 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition disabled:opacity-50">Cancel</button>
+                      <button onClick={handleAssignAgent} disabled={isAssigning || !selectedAgentId}
+                        className="flex-1 px-4 py-2.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-xl text-xs font-bold shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2">
+                        {isAssigning ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Assigning...</> : 'Assign Agent'}
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══════════ TAB: FINANCE ═══════════ */}
+          {activeTab === 'finance' && (
+            <div className="space-y-6">
+              {/* Stats Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                  { label: 'Total Transactions', value: payments.length, icon: FiCreditCard },
+                  { label: 'Completed Payments', value: payments.filter(p => p.status === 'completed').length, icon: FiCheckCircle },
+                  { label: 'Refunded', value: payments.filter(p => p.status === 'refunded').length, icon: FiRefreshCw },
+                ].map((s, i) => (
+                  <div key={i} className="bg-white rounded-2xl border border-slate-200/60 p-5 flex items-center gap-4">
+                    <div className="p-2.5 bg-[#faf9f6] rounded-xl border border-slate-100 text-[#8b4513]"><s.icon size={18} /></div>
+                    <div><p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{s.label}</p><p className="text-xl font-black text-slate-800">{s.value}</p></div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Payments Table */}
+              <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b-2 border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="py-3 px-4 text-left">Transaction ID</th>
+                        <th className="py-3 px-4 text-left">Customer</th>
+                        <th className="py-3 px-4 text-left">Amount</th>
+                        <th className="py-3 px-4 text-left">Method</th>
+                        <th className="py-3 px-4 text-left">Status</th>
+                        <th className="py-3 px-4 text-left">Date</th>
+                        <th className="py-3 px-4 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-semibold text-slate-600">
+                      {payments.length === 0 ? (
+                        <tr><td colSpan={7} className="text-center py-10 text-slate-400 italic">No payment records found</td></tr>
+                      ) : payments.map(p => (
+                        <tr key={p._id} className="border-b border-slate-50 hover:bg-[#faf9f6]/60 transition-colors">
+                          <td className="py-3 px-4 font-mono text-[10px] font-bold text-slate-500">{p.transactionId}</td>
+                          <td className="py-3 px-4">{p.customer?.firstName} {p.customer?.lastName}</td>
+                          <td className="py-3 px-4 font-bold text-slate-800">₹{p.amount}</td>
+                          <td className="py-3 px-4 uppercase text-[10px]">{p.method}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                              p.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              p.status === 'refunded' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                              p.status === 'failed' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}>{p.status}</span>
+                          </td>
+                          <td className="py-3 px-4 text-[10px] text-slate-400">{new Date(p.paymentDate || p.createdAt).toLocaleDateString()}</td>
+                          <td className="py-3 px-4 text-center">
+                            {p.status === 'completed' && (
+                              <button onClick={() => handleRefund(p._id)}
+                                className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-black uppercase shadow-sm transition">
+                                Refund
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════ TAB: HELPDESK ═══════════ */}
+          {activeTab === 'helpdesk' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ minHeight: '500px' }}>
+              {/* Tickets List */}
+              <div className="lg:col-span-1 bg-white rounded-2xl border border-slate-200/60 overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-100">
+                  <p className="text-[9px] font-black uppercase tracking-[0.15em] text-[#8b4513]">Support Tickets ({complaints.length})</p>
+                </div>
+                <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+                  {complaints.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-10">No tickets found</p>
+                  ) : complaints.map(t => (
+                    <button key={t._id} onClick={() => { setActiveTicket(t); setReplyText(''); }}
+                      className={`w-full text-left p-4 hover:bg-[#faf9f6]/60 transition-colors ${activeTicket?._id === t._id ? 'bg-[#8b4513]/5 border-l-2 border-[#8b4513]' : ''}`}>
+                      <div className="flex justify-between items-start mb-1">
+                        <p className="text-xs font-bold text-slate-700 truncate flex-1">{t.subject}</p>
+                        <span className={`ml-2 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider flex-shrink-0 ${
+                          t.status === 'open' ? 'bg-amber-50 text-amber-700' :
+                          t.status === 'in_progress' ? 'bg-blue-50 text-blue-700' :
+                          'bg-emerald-50 text-emerald-700'
+                        }`}>{t.status.replace('_', ' ')}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">{t.customer?.firstName} {t.customer?.lastName} • {t.category}</p>
+                      <p className="text-[9px] text-slate-300 mt-1">{new Date(t.createdAt).toLocaleDateString()}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Chat Terminal */}
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/60 overflow-hidden flex flex-col">
+                {activeTicket ? (
+                  <>
+                    {/* Ticket Header */}
+                    <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-black text-slate-800">{activeTicket.subject}</p>
+                        <p className="text-[10px] text-slate-400">{activeTicket.ticketId} • {activeTicket.category} • Priority: {activeTicket.priority}</p>
+                      </div>
+                      {activeTicket.status !== 'closed' && (
+                        <button onClick={() => handleCloseTicket(activeTicket._id)}
+                          className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[9px] font-black uppercase shadow-sm transition hover:bg-emerald-100">
+                          ✓ Close Ticket
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Messages */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: '380px' }}>
+                      {activeTicket.messages?.map((msg, i) => (
+                        <div key={i} className={`flex ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-semibold ${
+                            msg.sender === 'admin'
+                              ? 'bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-br-md'
+                              : 'bg-[#faf9f6] text-slate-700 border border-slate-100 rounded-bl-md'
+                          }`}>
+                            <p className="text-[8px] font-black uppercase tracking-wider mb-1 opacity-70">{msg.sender}</p>
+                            <p className="leading-relaxed">{msg.text}</p>
+                            <p className="text-[8px] mt-1.5 opacity-50">{new Date(msg.timestamp).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Reply Input */}
+                    {activeTicket.status !== 'closed' && (
+                      <div className="p-4 border-t border-slate-100 flex gap-3">
+                        <input type="text" value={replyText} onChange={e => setReplyText(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleSendReply(); }}
+                          placeholder="Type your reply..."
+                          className="flex-1 px-4 py-2.5 bg-[#faf9f6] border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#8b4513]" />
+                        <button onClick={handleSendReply} disabled={isSendingReply || !replyText.trim()}
+                          className="px-4 py-2.5 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-xl text-xs font-bold shadow-md disabled:opacity-50 flex items-center gap-1.5 transition hover:shadow-lg">
+                          <FiSend size={12} /> Send
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center space-y-2">
+                      <FiMessageSquare size={32} className="text-slate-200 mx-auto" />
+                      <p className="text-xs text-slate-400 font-semibold">Select a ticket to view conversation</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════ TAB: BROADCASTER ═══════════ */}
+          {activeTab === 'broadcast' && (
+            <div className="space-y-6 w-full">
+              <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-5">
+                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                  <div className="p-2.5 bg-[#8b4513]/10 rounded-xl text-[#8b4513]"><FiBell size={18} /></div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-800">Platform Announcement</h3>
+                    <p className="text-[10px] text-slate-400 font-semibold">Broadcast alerts to all customers and agents</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleBroadcast} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-1">Announcement Title *</label>
+                    <input type="text" value={broadcastForm.title} onChange={e => setBroadcastForm(f => ({ ...f, title: e.target.value }))}
+                      required placeholder="e.g. Scheduled Maintenance Alert"
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#8b4513] bg-[#faf9f6]" />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-1">Message Body *</label>
+                    <textarea value={broadcastForm.message} onChange={e => setBroadcastForm(f => ({ ...f, message: e.target.value }))}
+                      required rows={4} placeholder="Enter your announcement message..."
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#8b4513] bg-[#faf9f6] leading-relaxed" />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-1">Target Audience</label>
+                    <select value={broadcastForm.audience} onChange={e => setBroadcastForm(f => ({ ...f, audience: e.target.value }))}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#8b4513] bg-[#faf9f6]">
+                      <option value="all">All Users (Customers + Agents)</option>
+                      <option value="customers">Customers Only</option>
+                      <option value="agents">Agents Only</option>
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button type="submit" disabled={isBroadcasting}
+                      className="px-6 py-3 bg-gradient-to-r from-[#753401] to-[#8b4513] text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2">
+                      {isBroadcasting ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Dispatching...</> : <><FiSend size={12} /> Broadcast Now</>}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+
+        </main>
+      </div>
 
       <Footer />
     </div>

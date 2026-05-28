@@ -28,4 +28,13 @@ router.get('/verify-email', adminController.verifyEmail); // public unauthentica
 router.post('/send-aadhaar-otp', auth, authorize('admin', 'super_admin'), adminController.sendAadhaarOTP);
 router.post('/verify-aadhaar-otp', auth, authorize('admin', 'super_admin'), adminController.verifyAadhaarOTP);
 
+// Enterprise Control Center Routes
+router.get('/payments', auth, authorize('admin', 'super_admin'), adminController.getAllPayments);
+router.post('/payments/:id/refund', auth, authorize('admin', 'super_admin'), adminController.processRefund);
+router.get('/complaints', auth, authorize('admin', 'super_admin'), adminController.getAllComplaints);
+router.post('/complaints/:id/reply', auth, authorize('admin', 'super_admin'), adminController.replyToComplaint);
+router.put('/complaints/:id/status', auth, authorize('admin', 'super_admin'), adminController.updateComplaintStatus);
+router.put('/customers/:id/suspend', auth, authorize('admin', 'super_admin'), adminController.suspendCustomer);
+router.post('/notifications/broadcast', auth, authorize('admin', 'super_admin'), adminController.broadcastNotification);
+
 module.exports = router;
