@@ -1,8 +1,8 @@
 #!/bin/bash
 # Project Installation Verification Script
-# Run this to verify all project files are in place
+# Run this to verify all multi-app project files are correctly in place
 
-echo "🔍 Verifying Water Filter Service Management System Installation..."
+echo "🔍 Verifying FilterNest Multi-App Environment Installation..."
 echo ""
 
 # Colors for output
@@ -19,7 +19,7 @@ check_file() {
         echo -e "${GREEN}✓${NC} $1"
         ((successes++))
     else
-        echo -e "${RED}✗${NC} $1"
+        echo -e "${RED}✗${NC} $1 (MISSING)"
         ((errors++))
     fi
 }
@@ -29,14 +29,16 @@ check_dir() {
         echo -e "${GREEN}✓${NC} $1/"
         ((successes++))
     else
-        echo -e "${RED}✗${NC} $1/"
+        echo -e "${RED}✗${NC} $1/ (MISSING)"
         ((errors++))
     fi
 }
 
 echo "📁 Checking Directory Structure..."
 check_dir "server"
-check_dir "client"
+check_dir "customer-app"
+check_dir "agent-app"
+check_dir "admin-panel"
 check_dir ".github"
 
 echo ""
@@ -49,9 +51,11 @@ check_file "ARCHITECTURE.md"
 check_file "TESTING.md"
 check_file "PROJECT_SUMMARY.md"
 check_file ".gitignore"
+check_file "start-all.sh"
+check_file "verify-installation.sh"
 
 echo ""
-echo "🔌 Checking Backend Files..."
+echo "🔌 Checking Backend Core Files..."
 check_file "server/package.json"
 check_file "server/server.js"
 check_file "server/.env.example"
@@ -64,7 +68,6 @@ check_dir "server/routes"
 check_dir "server/middleware"
 check_dir "server/services"
 check_dir "server/utils"
-check_dir "server/config"
 
 echo ""
 echo "📋 Checking Backend Models..."
@@ -108,68 +111,45 @@ check_file "server/services/notificationService.js"
 check_file "server/services/schedulerService.js"
 
 echo ""
-echo "🎨 Checking Frontend Files..."
-check_file "client/package.json"
-check_file "client/index.html"
-check_file "client/.env.example"
-check_file "client/tailwind.config.js"
-check_file "client/postcss.config.js"
-check_file "client/vite.config.js"
+echo "🛒 Checking Customer App Frontend..."
+check_file "customer-app/package.json"
+check_file "customer-app/index.html"
+check_file "customer-app/vite.config.js"
+check_dir "customer-app/src/pages"
+check_dir "customer-app/src/components"
+check_dir "customer-app/src/context"
+check_dir "customer-app/src/services"
 
 echo ""
-echo "📁 Checking Frontend Directories..."
-check_dir "client/src"
-check_dir "client/src/pages"
-check_dir "client/src/components"
-check_dir "client/src/services"
-check_dir "client/src/context"
-check_dir "client/src/styles"
-check_dir "client/src/utils"
+echo "🔧 Checking Agent App Frontend..."
+check_file "agent-app/package.json"
+check_file "agent-app/index.html"
+check_file "agent-app/vite.config.js"
+check_dir "agent-app/src/pages"
+check_dir "agent-app/src/components"
+check_dir "agent-app/src/context"
+check_dir "agent-app/src/services"
 
 echo ""
-echo "📖 Checking Frontend Pages..."
-check_file "client/src/pages/Home.jsx"
-check_file "client/src/pages/Login.jsx"
-check_file "client/src/pages/Register.jsx"
-check_file "client/src/pages/Services.jsx"
-check_file "client/src/pages/About.jsx"
-check_file "client/src/pages/Contact.jsx"
-check_file "client/src/pages/BookService.jsx"
-check_file "client/src/pages/Dashboard.jsx"
-check_file "client/src/pages/AdminDashboard.jsx"
+echo "⚙️ Checking Admin Panel Frontend..."
+check_file "admin-panel/package.json"
+check_file "admin-panel/index.html"
+check_file "admin-panel/vite.config.js"
+check_dir "admin-panel/src/pages"
+check_dir "admin-panel/src/components"
+check_dir "admin-panel/src/context"
+check_dir "admin-panel/src/services"
 
 echo ""
-echo "🧩 Checking Frontend Components..."
-check_file "client/src/components/Navbar.jsx"
-check_file "client/src/components/Footer.jsx"
-check_file "client/src/components/ServiceCard.jsx"
-check_file "client/src/components/BookingCard.jsx"
-
-echo ""
-echo "🌐 Checking Frontend Services..."
-check_file "client/src/services/api.js"
-check_file "client/src/services/services.js"
-
-echo ""
-echo "🧠 Checking Frontend State Management..."
-check_file "client/src/context/authStore.js"
-
-echo ""
-echo "🎪 Checking Frontend App Files..."
-check_file "client/src/App.jsx"
-check_file "client/src/main.jsx"
-check_file "client/src/styles/globals.css"
-
-echo ""
-echo "=====================================  "
+echo "====================================="
 echo "📊 Verification Summary"
 echo "====================================="
-echo -e "✓ Files Found: ${GREEN}${successes}${NC}"
-echo -e "✗ Files Missing: ${RED}${errors}${NC}"
+echo -e "✓ Files & Directories Found: ${GREEN}${successes}${NC}"
+echo -e "✗ Files & Directories Missing: ${RED}${errors}${NC}"
 echo ""
 
 if [ $errors -eq 0 ]; then
-    echo -e "${GREEN}✅ All files verified successfully!${NC}"
+    echo -e "${GREEN}✅ All multi-app components verified successfully!${NC}"
     echo ""
     echo "Next steps:"
     echo "1. npm run install-all"
@@ -177,7 +157,7 @@ if [ $errors -eq 0 ]; then
     echo "3. npm run dev"
     exit 0
 else
-    echo -e "${RED}⚠️  Some files are missing!${NC}"
-    echo "Please check the installation."
+    echo -e "${RED}⚠️  Some files are missing from the configuration!${NC}"
+    echo "Please check the installation checklist."
     exit 1
 fi

@@ -9,7 +9,6 @@
     "dev:customer": "cd customer-app && npm run dev",
     "dev:agent": "cd agent-app && npm run dev",
     "dev:admin": "cd admin-panel && npm run dev",
-    "dev:client": "cd client && npm run dev",
     "build": "npm run build:customer && npm run build:agent && npm run build:admin",
     "build:customer": "cd customer-app && npm run build",
     "build:agent": "cd agent-app && npm run build",
