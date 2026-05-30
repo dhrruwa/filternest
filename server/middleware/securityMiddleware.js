@@ -94,8 +94,20 @@ const csrfCheck = (req, res, next) => {
       process.env.FRONTEND_URL,
     ].filter(Boolean);
 
-    // Simple matches to allow local loopbacks and configured domain
-    const isAllowed = allowedOrigins.some((allowed) => origin.startsWith(allowed));
+    // Safe origin matching - use exact string comparison to avoid issues
+    // Extract just the protocol + host from origin/referer if needed
+    let originToCheck = origin;
+    if (origin && origin.includes('/')) {
+      try {
+        const url = new URL(origin);
+        originToCheck = url.origin; // Get protocol + host only
+      } catch (e) {
+        // If URL parsing fails, use original origin
+        originToCheck = origin;
+      }
+    }
+
+    const isAllowed = allowedOrigins.includes(originToCheck);
     
     if (!isAllowed) {
       return res.status(403).json({
