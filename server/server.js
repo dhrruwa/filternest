@@ -81,8 +81,13 @@ app.use((req, res, next) => {
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/water-filter-service')
   .then(async () => {
     console.log('MongoDB connected');
-    await seedDefaultAdmin();
-    await seedTestCustomer();
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Database seeding active (development mode)...');
+      await seedDefaultAdmin();
+      await seedTestCustomer();
+    } else {
+      console.log('Database seeding bypassed (production/external environment)...');
+    }
   })
   .catch(err => console.log('MongoDB connection error:', err));
 
