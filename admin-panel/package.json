@@ -1,0 +1,30 @@
+{
+  "name": "filternest-admin-panel",
+  "version": "1.0.0",
+  "description": "FilterNest Admin Panel - Enterprise control center",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.5.0",
+    "date-fns": "^2.30.0",
+    "framer-motion": "^10.16.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-icons": "^4.11.0",
+    "react-router-dom": "^6.15.0",
+    "recharts": "^2.10.3",
+    "zustand": "^4.4.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.3",
+    "autoprefixer": "^10.4.15",
+    "postcss": "^8.4.30",
+    "tailwindcss": "^3.3.3",
+    "vite": "^4.4.9"
+  },
+  "scripts": {
+    "dev": "vite --port 6000",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}

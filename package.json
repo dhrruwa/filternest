@@ -4,15 +4,20 @@
   "description": "Water Filter Service Management System - Full Stack Application",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:customer\" \"npm run dev:agent\" \"npm run dev:admin\"",
     "dev:server": "cd server && npm run dev",
+    "dev:customer": "cd customer-app && npm run dev",
+    "dev:agent": "cd agent-app && npm run dev",
+    "dev:admin": "cd admin-panel && npm run dev",
     "dev:client": "cd client && npm run dev",
-    "build": "npm run build:server && npm run build:client",
+    "build": "npm run build:customer && npm run build:agent && npm run build:admin",
+    "build:customer": "cd customer-app && npm run build",
+    "build:agent": "cd agent-app && npm run build",
+    "build:admin": "cd admin-panel && npm run build",
     "build:server": "cd server && npm install",
-    "build:client": "cd client && npm install && npm run build",
     "start": "cd server && npm start",
     "seed": "cd server && node utils/seedServices.js",
-    "install-all": "npm install && cd server && npm install && cd ../client && npm install"
+    "install-all": "npm install && cd server && npm install && cd ../customer-app && npm install && cd ../agent-app && npm install && cd ../admin-panel && npm install"
   },
   "keywords": [
     "water",

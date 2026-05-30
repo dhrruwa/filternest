@@ -3,31 +3,37 @@ const Admin = require('../models/Admin');
 
 const seedDefaultAdmin = async () => {
   try {
-    const defaultAdminEmail = 'dhruwa@gmail.com';
-    
-    // Check if admin already exists
-    const existingAdmin = await Admin.findOne({ email: defaultAdminEmail });
-    if (existingAdmin) {
-      console.log(`✓ Default admin already exists: ${defaultAdminEmail}`);
-      return;
+    const adminsToSeed = [
+      {
+        firstName: 'Dhruva',
+        lastName: 'Admin',
+        email: 'dhruwa@gmail.com',
+        phone: '+919999999999',
+        password: '12345678',
+        role: 'admin',
+        isActive: true,
+      },
+      {
+        firstName: 'FilterNest',
+        lastName: 'Admin',
+        email: 'admin@filternest.com',
+        phone: '+918888888888',
+        password: 'admin123',
+        role: 'admin',
+        isActive: true,
+      }
+    ];
+
+    for (const adminData of adminsToSeed) {
+      const existingAdmin = await Admin.findOne({ email: adminData.email });
+      if (existingAdmin) {
+        console.log(`✓ Admin already exists: ${adminData.email}`);
+      } else {
+        const newAdmin = new Admin(adminData);
+        await newAdmin.save();
+        console.log(`✓ Default admin account created successfully: ${adminData.email} (${adminData.password})`);
+      }
     }
-
-    // Create default admin (DO NOT hash password manually - let the pre-save middleware do it)
-    const defaultAdmin = new Admin({
-      firstName: 'Dhruva',
-      lastName: 'Admin',
-      email: defaultAdminEmail,
-      phone: '+919999999999',
-      password: '12345678', // Pre-save middleware will hash this
-      role: 'admin',
-      isActive: true,
-    });
-
-    await defaultAdmin.save();
-    console.log('✓ Default admin account created successfully');
-    console.log(`  Email: ${defaultAdminEmail}`);
-    console.log(`  Password: 12345678`);
-    console.log(`  Role: admin`);
   } catch (error) {
     console.error('Error seeding default admin:', error.message);
   }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiMenu, FiX, FiLogOut, FiUser } from 'react-icons/fi';
+import { FiMenu, FiX, FiLogOut, FiUser, FiSearch, FiBell } from 'react-icons/fi';
 import { useAuthStore } from '../context/authStore';
 import { ADMIN_ROLES, ROLES } from '../utils/auth';
 
@@ -26,13 +26,8 @@ const Navbar = () => {
     { name: 'Contact', path: '/contact' },
   ];
 
-  // ADMIN LINKS - Full management access
-  const adminLinks = [
-    { name: 'Dashboard', path: '/admin-dashboard' },
-    { name: 'Manage Agents', path: '/admin-dashboard?view=agents' },
-    { name: 'Manage Bookings', path: '/admin-dashboard?view=bookings' },
-    { name: 'Analytics', path: '/admin-dashboard?view=analytics' },
-  ];
+  // ADMIN LINKS - Navigation should exist ONLY in the sidebar
+  const adminLinks = [];
 
   // AGENT LINKS - Service management access
   const agentLinks = [
@@ -75,6 +70,18 @@ const Navbar = () => {
           />
         </Link>
 
+        {/* Search Bar - Modern Glassmorphic Design (Admin Only) */}
+        {ADMIN_ROLES.includes(role) && (
+          <div className="hidden md:flex items-center relative max-w-md w-full mx-8">
+            <FiSearch className="absolute left-4 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search bookings, customers, technicians..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-50/50 hover:bg-slate-50 border border-slate-200/60 focus:border-primary rounded-xl text-xs text-primary focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all placeholder-slate-400"
+            />
+          </div>
+        )}
+
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-8">
           {navLinks.map((link) => (
@@ -95,6 +102,14 @@ const Navbar = () => {
 
         {/* Right Section */}
         <div className="hidden md:flex items-center gap-4">
+          {/* Notifications Button (Admin Only) */}
+          {user && ADMIN_ROLES.includes(role) && (
+            <button className="relative p-2 text-slate-500 hover:text-primary hover:bg-slate-50 border border-transparent hover:border-slate-100 rounded-xl transition-all">
+              <FiBell size={18} />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white"></span>
+            </button>
+          )}
+
           {user && (
             <Link
               to={

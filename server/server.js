@@ -28,10 +28,14 @@ app.use(cors({
     
     // In production, check against allowed list
     const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
+      'http://localhost:3000',  // customer-app
+      'http://localhost:4000',  // agent-app
+      'http://localhost:6000',  // admin-panel
+      'http://localhost:6001',  // admin-panel (macOS fallback)
       'http://127.0.0.1:3000',
-      'http://127.0.0.1:3001',
+      'http://127.0.0.1:4000',
+      'http://127.0.0.1:6000',
+      'http://127.0.0.1:6001',  // admin-panel (macOS fallback)
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
