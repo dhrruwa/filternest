@@ -28,18 +28,23 @@ app.use(cors({
     
     // In production, check against allowed list
     const allowedOrigins = [
+      'https://filternest.vercel.app',
       'http://localhost:3000',  // customer-app
       'http://localhost:4000',  // agent-app
+      'http://localhost:5173',  // vite dev fallback
       'http://localhost:6000',  // admin-panel
       'http://localhost:6001',  // admin-panel (macOS fallback)
       'http://127.0.0.1:3000',
       'http://127.0.0.1:4000',
+      'http://127.0.0.1:5173',
       'http://127.0.0.1:6000',
       'http://127.0.0.1:6001',  // admin-panel (macOS fallback)
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
-    if (!origin || allowedOrigins.includes(origin)) {
+    const isAllowed = allowedOrigins.some((allowed) => origin.startsWith(allowed));
+    
+    if (!origin || isAllowed) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

@@ -80,12 +80,15 @@ const csrfCheck = (req, res, next) => {
   
   if (origin) {
     const allowedOrigins = [
+      'https://filternest.vercel.app',
       'http://localhost:3000',  // Customer App
       'http://localhost:4000',  // Agent App
+      'http://localhost:5173',  // Vite dev fallback
       'http://localhost:6000',  // Admin Panel
       'http://localhost:6001',  // Admin Panel (macOS fallback)
       'http://127.0.0.1:3000',
       'http://127.0.0.1:4000',
+      'http://127.0.0.1:5173',
       'http://127.0.0.1:6000',
       'http://127.0.0.1:6001',  // Admin Panel (macOS fallback)
       process.env.FRONTEND_URL,
