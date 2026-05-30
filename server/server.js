@@ -42,7 +42,7 @@ app.use(cors({
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
-    const isAllowed = allowedOrigins.some((allowed) => origin.startsWith(allowed));
+    const isAllowed = allowedOrigins.includes(origin);
     
     if (!origin || isAllowed) {
       callback(null, true);
