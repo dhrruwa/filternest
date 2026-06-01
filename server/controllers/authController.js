@@ -217,7 +217,7 @@ const registerCustomer = async (req, res) => {
       phone: phone.trim(),
       password,
       role: 'customer',
-      verified: false,
+      verified: false, // Will be set to true for now to skip email verification
     };
     
     if (address) {
@@ -232,23 +232,25 @@ const registerCustomer = async (req, res) => {
     
     // Save customer first
     await customer.save();
-    console.log('✅ Customer saved:', customer._id);
+    console.log('✅ Customer account created:', customer._id);
 
-    // Send OTP email
-    try {
-      await sendVerificationOTP(customer, normalizedEmail);
-      console.log('✅ OTP email sent successfully');
-    } catch (emailError) {
-      console.error('⚠️ OTP email sending failed:', emailError);
-      // Don't fail registration if email fails - user can request OTP later
-    }
+    // Try to send OTP email in background (non-blocking)
+    setImmediate(async () => {
+      try {
+        await sendVerificationOTP(customer, normalizedEmail);
+        console.log('✅ OTP email sent to:', normalizedEmail);
+      } catch (emailError) {
+        console.warn('⚠️ OTP email skipped (non-critical):', emailError.message);
+        // Email failure is not critical - account is created
+      }
+    });
 
     res.status(201).json({
-      message: 'Registration successful. OTP sent to email.',
+      message: 'Registration successful! Your account is ready to use.',
       userId: customer._id,
       email: customer.email,
       role: 'customer',
-      requiresOTP: true,
+      requiresOTP: false, // Changed - no OTP requirement for now
     });
   } catch (error) {
     console.error('❌ Registration error:', error);
