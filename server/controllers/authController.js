@@ -217,7 +217,7 @@ const registerCustomer = async (req, res) => {
       phone: phone.trim(),
       password,
       role: 'customer',
-      verified: false, // Will be set to true for now to skip email verification
+      verified: true, // Auto-verify for simplified onboarding
     };
     
     if (address) {
