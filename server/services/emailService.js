@@ -73,8 +73,6 @@ const sendEmail = async (to, subject, html) => {
     return false;
   }
 };
-  }
-};
 
 // =========================
 // OTP EMAIL
