@@ -1,49 +1,78 @@
 const nodemailer = require('nodemailer');
 
 // =========================
-console.log(process.env.SMTP_HOST);
-console.log(process.env.SMTP_PORT);
-console.log(process.env.SMTP_USER);
+// SMTP Configuration with timeout
 // =========================
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT) || 465,
-  secure: true,
-
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: Number(process.env.SMTP_PORT) === 465, // true for 465, false for other ports (587 uses STARTTLS)
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  connectionTimeout: 5000, // 5 seconds timeout
+  socketTimeout: 5000, // 5 seconds timeout
+  pool: {
+    maxConnections: 1,
+    maxMessages: 5,
+    rateDelta: 2000,
+    rateLimit: 5,
+  },
 });
 
-// Verify SMTP connection
+// Verify SMTP connection with timeout
 transporter.verify((error, success) => {
   if (error) {
-    console.log('❌ SMTP ERROR:', error);
+    console.log('⚠️ SMTP Verification Error:', error.code || error.message);
   } else {
     console.log('✅ SMTP Server Ready');
   }
 });
 
 // =========================
-// SEND EMAIL FUNCTION
+// SEND EMAIL FUNCTION (Non-blocking with timeout)
 // =========================
 const sendEmail = async (to, subject, html) => {
+  // Create a timeout promise
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Email timeout - took too long')), 4000);
+  });
+
   try {
-    const info = await transporter.sendMail({
+    const emailPromise = transporter.sendMail({
       from: `"FilterNest Service" <${process.env.SMTP_FROM}>`,
       to,
       subject,
       html,
     });
 
+    // Race between email and timeout
+    const info = await Promise.race([emailPromise, timeoutPromise]);
     console.log('✅ Email sent:', info.response);
-
     return true;
-  } catch (error) {
-    console.error('❌ Email sending error:', error);
 
+  } catch (error) {
+    console.warn('⚠️ Email sending failed (non-blocking):', error.message);
+    
+    // Log more details in development
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Email error details:', {
+        to,
+        subject,
+        code: error.code,
+        message: error.message,
+      });
+    }
+    
+    // Don't throw - return false so email failure doesn't break registration
+    // Send to background job queue if needed
+    if (process.env.NODE_ENV === 'production') {
+      console.warn(`📧 Email queue: Failed to send OTP to ${to}. User can request OTP manually.`);
+    }
     return false;
+  }
+};
   }
 };
 

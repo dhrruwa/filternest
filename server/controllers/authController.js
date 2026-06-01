@@ -148,7 +148,13 @@ const sendVerificationOTP = async (user, email) => {
       <p style="color: #6b7280; font-size: 14px;">This code will expire in 10 minutes. For security, do not share this code with anyone.</p>
     </div>
   `;
-  await sendEmail(email, 'Verify Your FilterNest Account', emailContent);
+
+  try {
+    await sendEmail(email, 'Verify Your FilterNest Account', emailContent);
+  } catch (emailError) {
+    console.warn('⚠️ OTP email could not be sent, but OTP stored for manual verification:', emailError.message);
+    // Continue - don't fail registration just because email failed
+  }
 };
 
 const sendLoginOTP = async (user, email, userType = 'customer') => {
@@ -169,7 +175,13 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
     </div>
   `;
   const roleName = userType === 'agent' ? 'Agent' : userType === 'admin' ? 'Admin' : 'Customer';
-  await sendEmail(email, `${roleName} Dynamic OTP Code - FilterNest Security`, emailContent);
+  
+  try {
+    await sendEmail(email, `${roleName} Dynamic OTP Code - FilterNest Security`, emailContent);
+  } catch (emailError) {
+    console.warn('⚠️ Login OTP email could not be sent:', emailError.message);
+    // Continue - OTP is still stored and can be used
+  }
 };
 
 const findVerifiableUser = async (email, role = 'customer') => {
@@ -187,31 +199,49 @@ const registerCustomer = async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const existingCustomer = await Customer.findOne({ $or: [{ email }, { phone }] });
-    const existingAgent = await Agent.findOne({ $or: [{ email }, { phone }] });
-    const existingAdmin = await Admin.findOne({ email });
+    // Normalize email to lowercase
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const existingCustomer = await Customer.findOne({ $or: [{ email: normalizedEmail }, { phone }] });
+    const existingAgent = await Agent.findOne({ $or: [{ email: normalizedEmail }, { phone }] });
+    const existingAdmin = await Admin.findOne({ email: normalizedEmail });
     
     if (existingCustomer || existingAgent || existingAdmin) {
       return res.status(400).json({ error: 'Email or phone already registered' });
     }
 
     let customerData = {
-      firstName,
-      lastName,
-      email,
-      phone,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
       password,
-      address,
       role: 'customer',
       verified: false,
     };
+    
+    if (address) {
+      customerData.address = address;
+    }
     
     if (location && Array.isArray(location.coordinates) && location.coordinates.length === 2) {
       customerData.location = location;
     }
 
     const customer = new Customer(customerData);
-    await sendVerificationOTP(customer, email);
+    
+    // Save customer first
+    await customer.save();
+    console.log('✅ Customer saved:', customer._id);
+
+    // Send OTP email
+    try {
+      await sendVerificationOTP(customer, normalizedEmail);
+      console.log('✅ OTP email sent successfully');
+    } catch (emailError) {
+      console.error('⚠️ OTP email sending failed:', emailError);
+      // Don't fail registration if email fails - user can request OTP later
+    }
 
     res.status(201).json({
       message: 'Registration successful. OTP sent to email.',
@@ -221,7 +251,8 @@ const registerCustomer = async (req, res) => {
       requiresOTP: true,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('❌ Registration error:', error);
+    res.status(500).json({ error: error.message || 'Registration failed. Please try again.' });
   }
 };
 

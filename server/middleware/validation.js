@@ -4,7 +4,10 @@ const validateCustomerRegistration = [
   body('firstName').trim().notEmpty().withMessage('First name is required'),
   body('lastName').trim().notEmpty().withMessage('Last name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('phone').isMobilePhone().withMessage('Valid phone number is required'),
+  body('phone')
+    .trim()
+    .matches(/^[0-9\s\-\+\(\)]{10,15}$/)
+    .withMessage('Valid phone number (10-15 digits) is required'),
   body('password')
     .isStrongPassword({ minLength: 8, minLowercase: 1, minUppercase: 0, minNumbers: 1, minSymbols: 0 })
     .withMessage('Password must be at least 8 characters and include a number'),
