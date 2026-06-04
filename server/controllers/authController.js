@@ -1,11 +1,6 @@
-const Customer = require('../models/Customer');
-const Agent = require('../models/Agent');
-const Admin = require('../models/Admin');
-const Session = require('../models/Session');
-const RefreshToken = require('../models/RefreshToken');
-const DeviceTracking = require('../models/DeviceTracking');
-const LoginHistory = require('../models/LoginHistory');
-const PasswordResetToken = require('../models/PasswordResetToken');
+const prisma = require('../lib/prisma');
+const { stripSensitive } = require('../lib/sanitize');
+const bcrypt = require('bcryptjs');
 const { generateAccessToken, generateRefreshToken, generateToken } = require('../utils/tokenUtils');
 const { generateOTP, getOTPExpiration } = require('../utils/otpUtils');
 const { parseUserAgent } = require('../utils/deviceParser');
@@ -23,7 +18,7 @@ const generateUniqueAgentId = async () => {
   while (attempts < 10) {
     const randomDigits = Math.floor(100000 + Math.random() * 900000);
     const id = `AG${randomDigits}`;
-    const exists = await Agent.findOne({ agentId: id });
+    const exists = await prisma.agent.findUnique({ where: { agentId: id } });
     if (!exists) return id;
     attempts++;
   }
@@ -36,23 +31,25 @@ const generateUniqueAgentId = async () => {
 const establishUserSession = async (user, userType, req, res, reason = 'successful authentication') => {
   const clientInfo = parseUserAgent(req.headers['user-agent']);
   const fingerprint = `${clientInfo.os}-${clientInfo.browser}-${clientInfo.deviceType}`;
+  const userModel = userType === 'customer' ? 'Customer' : userType === 'agent' ? 'Agent' : 'Admin';
 
   // 1. Device Tracking & Warnings
-  let knownDevice = await DeviceTracking.findOne({ userId: user._id, deviceFingerprint: fingerprint });
+  let knownDevice = await prisma.deviceTracking.findFirst({ where: { userId: user.id, deviceFingerprint: fingerprint } });
   let isNewDevice = false;
 
   if (!knownDevice) {
     isNewDevice = true;
-    knownDevice = new DeviceTracking({
-      userId: user._id,
-      userModel: userType === 'customer' ? 'Customer' : userType === 'agent' ? 'Agent' : 'Admin',
-      deviceFingerprint: fingerprint,
-      os: clientInfo.os,
-      browser: clientInfo.browser,
-      deviceType: clientInfo.deviceType,
-      isTrusted: true,
+    knownDevice = await prisma.deviceTracking.create({
+      data: {
+        userId: user.id,
+        userModel,
+        deviceFingerprint: fingerprint,
+        os: clientInfo.os,
+        browser: clientInfo.browser,
+        deviceType: clientInfo.deviceType,
+        isTrusted: true,
+      },
     });
-    await knownDevice.save();
 
     // Trigger New Login Warning Email
     const alertHtml = `
@@ -73,52 +70,57 @@ const establishUserSession = async (user, userType, req, res, reason = 'successf
     `;
     await sendEmail(user.email, 'FilterNest Security Warning: New Login Detected', alertHtml);
   } else {
-    knownDevice.lastLogin = new Date();
-    await knownDevice.save();
+    await prisma.deviceTracking.update({
+      where: { id: knownDevice.id },
+      data: { lastLogin: new Date() },
+    });
   }
 
   // 2. Audit Trail
-  const loginRecord = new LoginHistory({
-    userId: user._id,
-    userModel: userType === 'customer' ? 'Customer' : userType === 'agent' ? 'Agent' : 'Admin',
-    email: user.email,
-    os: clientInfo.os,
-    browser: clientInfo.browser,
-    deviceType: clientInfo.deviceType,
-    ipAddress: req.ip || '127.0.0.1',
-    location: 'Mumbai, India', // Simulated geolocation mapping
-    status: isNewDevice ? 'suspicious' : 'success',
-    reason: isNewDevice ? 'new device login' : reason,
+  await prisma.loginHistory.create({
+    data: {
+      userId: user.id,
+      userModel,
+      email: user.email,
+      os: clientInfo.os,
+      browser: clientInfo.browser,
+      deviceType: clientInfo.deviceType,
+      ipAddress: req.ip || '127.0.0.1',
+      location: 'Mumbai, India', // Simulated geolocation mapping
+      status: isNewDevice ? 'suspicious' : 'success',
+      reason: isNewDevice ? 'new device login' : reason,
+    },
   });
-  await loginRecord.save();
 
   // 3. Generate Access + Refresh Token Flow
   const refreshExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 Days
-  const rawRefreshToken = generateRefreshToken(user._id, user.role || userType);
+  const rawRefreshToken = generateRefreshToken(user.id, user.role || userType);
 
-  const refreshTokenDoc = new RefreshToken({
-    userId: user._id,
-    userModel: userType === 'customer' ? 'Customer' : userType === 'agent' ? 'Agent' : 'Admin',
-    token: rawRefreshToken,
-    expiresAt: refreshExpires,
+  const refreshTokenDoc = await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      userModel,
+      token: rawRefreshToken,
+      expiresAt: refreshExpires,
+    },
   });
-  await refreshTokenDoc.save();
 
-  const sessionDoc = new Session({
-    userId: user._id,
-    userModel: userType === 'customer' ? 'Customer' : userType === 'agent' ? 'Agent' : 'Admin',
-    refreshTokenId: refreshTokenDoc._id,
-    os: clientInfo.os,
-    browser: clientInfo.browser,
-    deviceType: clientInfo.deviceType,
-    deviceName: clientInfo.deviceName,
-    ipAddress: req.ip || '127.0.0.1',
-    location: 'Mumbai, India',
-    expiresAt: refreshExpires,
+  const sessionDoc = await prisma.session.create({
+    data: {
+      userId: user.id,
+      userModel,
+      refreshTokenId: refreshTokenDoc.id,
+      os: clientInfo.os,
+      browser: clientInfo.browser,
+      deviceType: clientInfo.deviceType,
+      deviceName: clientInfo.deviceName,
+      ipAddress: req.ip || '127.0.0.1',
+      location: 'Mumbai, India',
+      expiresAt: refreshExpires,
+    },
   });
-  await sessionDoc.save();
 
-  const accessToken = generateAccessToken(user._id, user.role || userType, sessionDoc._id);
+  const accessToken = generateAccessToken(user.id, user.role || userType, sessionDoc.id);
 
   // 4. Set HTTP-Only Cookie with Secure settings
   res.cookie('refreshToken', rawRefreshToken, {
@@ -128,7 +130,7 @@ const establishUserSession = async (user, userType, req, res, reason = 'successf
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  return { accessToken, sessionId: sessionDoc._id };
+  return { accessToken, sessionId: sessionDoc.id };
 };
 
 const sendVerificationOTP = async (user, email) => {
@@ -136,7 +138,10 @@ const sendVerificationOTP = async (user, email) => {
   console.log(`Verification OTP for ${email}: ${otp}`);
   user.verificationOTP = otp;
   user.verificationOTPExpire = getOTPExpiration();
-  await user.save();
+  await prisma[user.role === 'agent' ? 'agent' : user.role === 'admin' ? 'admin' : 'customer'].update({
+    where: { id: user.id },
+    data: { verificationOTP: user.verificationOTP, verificationOTPExpire: user.verificationOTPExpire },
+  });
 
   const emailContent = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; color: #1f2937;">
@@ -162,7 +167,10 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
   console.log(`Login OTP for ${email}: ${otp}`);
   user.loginOTP = otp;
   user.loginOTPExpire = getOTPExpiration();
-  await user.save();
+  await prisma[userType === 'agent' ? 'agent' : userType === 'admin' ? 'admin' : 'customer'].update({
+    where: { id: user.id },
+    data: { loginOTP: user.loginOTP, loginOTPExpire: user.loginOTPExpire },
+  });
 
   const emailContent = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; color: #1f2937;">
@@ -185,9 +193,9 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
 };
 
 const findVerifiableUser = async (email, role = 'customer') => {
-  if (role === 'agent') return Agent.findOne({ email });
-  if (role === 'admin') return Admin.findOne({ email });
-  return Customer.findOne({ email });
+  if (role === 'agent') return prisma.agent.findUnique({ where: { email } });
+  if (role === 'admin') return prisma.admin.findUnique({ where: { email } });
+  return prisma.customer.findUnique({ where: { email } });
 };
 
 // Customer Registration
@@ -201,38 +209,41 @@ const registerCustomer = async (req, res) => {
 
     // Normalize email to lowercase
     const normalizedEmail = email.toLowerCase().trim();
+    const trimmedPhone = phone.trim();
 
-    const existingCustomer = await Customer.findOne({ $or: [{ email: normalizedEmail }, { phone }] });
-    const existingAgent = await Agent.findOne({ $or: [{ email: normalizedEmail }, { phone }] });
-    const existingAdmin = await Admin.findOne({ email: normalizedEmail });
-    
+    const existingCustomer = await prisma.customer.findFirst({
+      where: { OR: [{ email: normalizedEmail }, { phone: trimmedPhone }] }
+    });
+    const existingAgent = await prisma.agent.findFirst({
+      where: { OR: [{ email: normalizedEmail }, { phone: trimmedPhone }] }
+    });
+    const existingAdmin = await prisma.admin.findUnique({
+      where: { email: normalizedEmail }
+    });
+
     if (existingCustomer || existingAgent || existingAdmin) {
       return res.status(400).json({ error: 'Email or phone already registered' });
     }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     let customerData = {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: normalizedEmail,
-      phone: phone.trim(),
-      password,
+      phone: trimmedPhone,
+      password: hashedPassword,
+      address,
       role: 'customer',
       verified: true, // Auto-verify for simplified onboarding
     };
-    
-    if (address) {
-      customerData.address = address;
-    }
-    
+
     if (location && Array.isArray(location.coordinates) && location.coordinates.length === 2) {
       customerData.location = location;
     }
 
-    const customer = new Customer(customerData);
-    
-    // Save customer first
-    await customer.save();
-    console.log('✅ Customer account created:', customer._id);
+    const customer = await prisma.customer.create({ data: customerData });
+    console.log('✅ Customer account created:', customer.id);
 
     // Try to send OTP email in background (non-blocking)
     setImmediate(async () => {
@@ -247,7 +258,7 @@ const registerCustomer = async (req, res) => {
 
     res.status(201).json({
       message: 'Registration successful! Your account is ready to use.',
-      userId: customer._id,
+      userId: customer.id,
       email: customer.email,
       role: 'customer',
       requiresOTP: false, // Changed - no OTP requirement for now
@@ -268,15 +279,15 @@ const requestLoginOTP = async (req, res) => {
     }
 
     let user;
-    if (userType === 'agent') user = await Agent.findOne({ email });
-    else if (userType === 'admin') user = await Admin.findOne({ email });
-    else user = await Customer.findOne({ email });
+    if (userType === 'agent') user = await prisma.agent.findUnique({ where: { email } });
+    else if (userType === 'admin') user = await prisma.admin.findUnique({ where: { email } });
+    else user = await prisma.customer.findUnique({ where: { email } });
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const isPasswordValid = await user.comparePassword(password);
+    const isPasswordValid = user.password && (await bcrypt.compare(password, user.password));
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -285,7 +296,7 @@ const requestLoginOTP = async (req, res) => {
       return res.status(400).json({
         error: 'Please verify your email first',
         requiresVerification: true,
-        userId: user._id,
+        userId: user.id,
         email: user.email,
       });
     }
@@ -298,7 +309,7 @@ const requestLoginOTP = async (req, res) => {
 
     res.json({
       message: 'OTP sent to your email',
-      userId: user._id,
+      userId: user.id,
       email: user.email,
       userType,
       requiresOTP: true,
@@ -317,8 +328,8 @@ const verifyLoginOTP = async (req, res) => {
       return res.status(400).json({ error: 'User ID and OTP are required' });
     }
 
-    let UserModel = userType === 'agent' ? Agent : userType === 'admin' ? Admin : Customer;
-    const user = await UserModel.findById(userId);
+    const delegate = userType === 'agent' ? prisma.agent : userType === 'admin' ? prisma.admin : prisma.customer;
+    const user = await delegate.findUnique({ where: { id: userId } });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -329,37 +340,35 @@ const verifyLoginOTP = async (req, res) => {
     }
 
     if (user.loginOTP !== otp) {
-      user.otpAttempts = (user.otpAttempts || 0) + 1;
-      if (user.otpAttempts >= 5) {
-        user.loginOTP = undefined;
-        user.loginOTPExpire = undefined;
-        user.otpAttempts = 0;
-        await user.save();
+      const otpAttempts = (user.otpAttempts || 0) + 1;
+      if (otpAttempts >= 5) {
+        await delegate.update({
+          where: { id: user.id },
+          data: { loginOTP: null, loginOTPExpire: null, otpAttempts: 0 },
+        });
         return res.status(400).json({ error: 'Too many incorrect attempts. The OTP has been invalidated.' });
       }
-      await user.save();
+      await delegate.update({ where: { id: user.id }, data: { otpAttempts } });
       return res.status(400).json({ error: 'Invalid OTP' });
     }
 
-    user.loginOTP = undefined;
-    user.loginOTPExpire = undefined;
-    user.otpAttempts = 0;
-    user.lastLogin = new Date();
-    await user.save();
+    const updatedUser = await delegate.update({
+      where: { id: user.id },
+      data: { loginOTP: null, loginOTPExpire: null, otpAttempts: 0, lastLogin: new Date() },
+    });
 
     // Establish session, tracking, audit history, access & refresh token cookie
-    const { accessToken } = await establishUserSession(user, userType, req, res, 'OTP verified login');
+    const { accessToken } = await establishUserSession(updatedUser, userType, req, res, 'OTP verified login');
 
-    let userData = user.toObject();
-    delete userData.password;
+    let userData = stripSensitive(updatedUser);
     if (userType === 'admin') delete userData.loginHistory;
 
     res.json({
       message: 'Login successful',
       token: accessToken,
       user: userData,
-      role: user.role || userType,
-      userId: user._id,
+      role: updatedUser.role || userType,
+      userId: updatedUser.id,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -368,35 +377,37 @@ const verifyLoginOTP = async (req, res) => {
 
 // Legacy Login with Access + Refresh Token Cookies supported
 const legacyLogin = async (user, userType, req, res) => {
-  user.lastLogin = new Date();
-  await user.save();
+  const delegate = userType === 'agent' ? prisma.agent : userType === 'admin' ? prisma.admin : prisma.customer;
+  const updatedUser = await delegate.update({
+    where: { id: user.id },
+    data: { lastLogin: new Date() },
+  });
 
-  const { accessToken } = await establishUserSession(user, userType, req, res, 'Legacy login');
+  const { accessToken } = await establishUserSession(updatedUser, userType, req, res, 'Legacy login');
 
-  let userData = user.toObject();
-  delete userData.password;
+  let userData = stripSensitive(updatedUser);
   if (userType === 'admin') delete userData.loginHistory;
 
   res.json({
     message: 'Login successful',
     token: accessToken,
     user: userData,
-    role: user.role || userType,
+    role: updatedUser.role || userType,
   });
 };
 
 const loginCustomer = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const customer = await Customer.findOne({ email });
+    const customer = await prisma.customer.findUnique({ where: { email } });
 
     if (!customer) return res.status(401).json({ error: 'Invalid email or password' });
 
-    const isPasswordValid = await customer.comparePassword(password);
+    const isPasswordValid = customer.password && (await bcrypt.compare(password, customer.password));
     if (!isPasswordValid) return res.status(401).json({ error: 'Invalid email or password' });
 
     if (!customer.verified) {
-      return res.status(400).json({ error: 'Please verify your account first', requiresOTP: true, userId: customer._id });
+      return res.status(400).json({ error: 'Please verify your account first', requiresOTP: true, userId: customer.id });
     }
 
     await legacyLogin(customer, 'customer', req, res);
@@ -408,7 +419,7 @@ const loginCustomer = async (req, res) => {
 const loginAgent = async (req, res) => {
   try {
     const { agentId, passcode, email, password } = req.body;
-    const agent = await Agent.findOne({ $or: [{ agentId }, { email }] });
+    const agent = await prisma.agent.findFirst({ where: { OR: [{ agentId }, { email }] } });
 
     if (!agent) return res.status(401).json({ error: 'Invalid credentials' });
 
@@ -417,7 +428,7 @@ const loginAgent = async (req, res) => {
       return res.status(403).json({ error: 'Agent account is pending approval, rejected, or suspended.' });
     }
 
-    const isPasswordValid = await agent.comparePassword(passcode || password);
+    const isPasswordValid = agent.password && (await bcrypt.compare(passcode || password, agent.password));
     if (!isPasswordValid) return res.status(401).json({ error: 'Invalid credentials' });
 
     if (!agent.isActive) return res.status(403).json({ error: 'Agent account is currently inactive.' });
@@ -431,11 +442,11 @@ const loginAgent = async (req, res) => {
 const loginAdmin = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const admin = await Admin.findOne({ email });
+    const admin = await prisma.admin.findUnique({ where: { email } });
 
     if (!admin) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const isPasswordValid = await admin.comparePassword(password);
+    const isPasswordValid = admin.password && (await bcrypt.compare(password, admin.password));
     if (!isPasswordValid) return res.status(401).json({ error: 'Invalid credentials' });
 
     await legacyLogin(admin, 'admin', req, res);
@@ -448,8 +459,8 @@ const loginAdmin = async (req, res) => {
 const forgotPassword = async (req, res) => {
   try {
     const { email, userType = 'customer' } = req.body;
-    let UserModel = userType === 'agent' ? Agent : userType === 'admin' ? Admin : Customer;
-    const user = await UserModel.findOne({ email });
+    const delegate = userType === 'agent' ? prisma.agent : userType === 'admin' ? prisma.admin : prisma.customer;
+    const user = await delegate.findUnique({ where: { email } });
 
     if (!user) {
       return res.status(200).json({ message: 'If that email exists in our records, a secure reset link has been dispatched.' });
@@ -461,11 +472,13 @@ const forgotPassword = async (req, res) => {
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 Minutes
 
-    await PasswordResetToken.create({
-      userId: user._id,
-      userModel: userType === 'agent' ? 'Agent' : userType === 'admin' ? 'Admin' : 'Customer',
-      token: hashedToken,
-      expiresAt,
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        userModel: userType === 'agent' ? 'Agent' : userType === 'admin' ? 'Admin' : 'Customer',
+        token: hashedToken,
+        expiresAt,
+      },
     });
 
     const clientInfo = parseUserAgent(req.headers['user-agent']);
@@ -510,34 +523,35 @@ const resetPassword = async (req, res) => {
     }
 
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    const resetTokenDoc = await PasswordResetToken.findOne({
-      token: hashedToken,
-      isUsed: false,
-      expiresAt: { $gt: new Date() },
+    const resetTokenDoc = await prisma.passwordResetToken.findFirst({
+      where: {
+        token: hashedToken,
+        isUsed: false,
+        expiresAt: { gt: new Date() },
+      },
     });
 
     if (!resetTokenDoc) {
       return res.status(400).json({ error: 'This reset link has expired, is invalid, or was already used.' });
     }
 
-    let UserModel = userType === 'agent' ? Agent : userType === 'admin' ? Admin : Customer;
-    const user = await UserModel.findById(resetTokenDoc.userId);
+    const delegate = userType === 'agent' ? prisma.agent : userType === 'admin' ? prisma.admin : prisma.customer;
+    const user = await delegate.findUnique({ where: { id: resetTokenDoc.userId } });
 
     if (!user) {
       return res.status(400).json({ error: 'User associated with this token was not found.' });
     }
 
-    // Update password (pre-save hook hashes it)
-    user.password = newPassword;
-    await user.save();
+    // Update password (hash explicitly — Mongoose pre-save hook is gone)
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await delegate.update({ where: { id: user.id }, data: { password: hashedPassword } });
 
     // Invalidate reset token
-    resetTokenDoc.isUsed = true;
-    await resetTokenDoc.save();
+    await prisma.passwordResetToken.update({ where: { id: resetTokenDoc.id }, data: { isUsed: true } });
 
     // Auto-terminate all active sessions for this user for security
-    await Session.updateMany({ userId: user._id }, { $set: { isActive: false } });
-    await RefreshToken.updateMany({ userId: user._id }, { $set: { isRevoked: true } });
+    await prisma.session.updateMany({ where: { userId: user.id }, data: { isActive: false } });
+    await prisma.refreshToken.updateMany({ where: { userId: user.id }, data: { isRevoked: true } });
 
     res.json({ message: 'Password reset successful. All other active devices have been logged out for security.' });
   } catch (error) {
@@ -553,20 +567,19 @@ const refreshSessionToken = async (req, res) => {
       return res.status(401).json({ error: 'Session cookie missing or expired. Please re-login.' });
     }
 
-    const tokenDoc = await RefreshToken.findOne({ token, isRevoked: false });
+    const tokenDoc = await prisma.refreshToken.findFirst({ where: { token, isRevoked: false } });
     if (!tokenDoc) {
       res.clearCookie('refreshToken');
       return res.status(401).json({ error: 'Session has been revoked or is invalid.' });
     }
 
     if (tokenDoc.expiresAt < new Date()) {
-      tokenDoc.isRevoked = true;
-      await tokenDoc.save();
+      await prisma.refreshToken.update({ where: { id: tokenDoc.id }, data: { isRevoked: true } });
       res.clearCookie('refreshToken');
       return res.status(401).json({ error: 'Refresh token expired.' });
     }
 
-    const activeSession = await Session.findOne({ refreshTokenId: tokenDoc._id, isActive: true });
+    const activeSession = await prisma.session.findFirst({ where: { refreshTokenId: tokenDoc.id, isActive: true } });
     if (!activeSession) {
       res.clearCookie('refreshToken');
       return res.status(401).json({ error: 'No active session matches this token.' });
@@ -574,11 +587,10 @@ const refreshSessionToken = async (req, res) => {
 
     // Refresh rotation: Issue fresh Access Token
     const role = userModelToRole(tokenDoc.userModel);
-    const newAccessToken = generateAccessToken(tokenDoc.userId, role, activeSession._id);
+    const newAccessToken = generateAccessToken(tokenDoc.userId, role, activeSession.id);
 
     // Update session last active time
-    activeSession.lastActive = new Date();
-    await activeSession.save();
+    await prisma.session.update({ where: { id: activeSession.id }, data: { lastActive: new Date() } });
 
     res.json({ token: newAccessToken });
   } catch (error) {
@@ -599,22 +611,20 @@ const logout = async (req, res) => {
     res.clearCookie('refreshToken');
 
     if (token) {
-      const tokenDoc = await RefreshToken.findOne({ token });
+      const tokenDoc = await prisma.refreshToken.findFirst({ where: { token } });
       if (tokenDoc) {
-        tokenDoc.isRevoked = true;
-        await tokenDoc.save();
-        await Session.updateOne({ refreshTokenId: tokenDoc._id }, { $set: { isActive: false } });
+        await prisma.refreshToken.update({ where: { id: tokenDoc.id }, data: { isRevoked: true } });
+        await prisma.session.updateMany({ where: { refreshTokenId: tokenDoc.id }, data: { isActive: false } });
       }
     }
 
     // Also mark req.sessionId as inactive if logged in via Bearer
     if (req.sessionId) {
-      const session = await Session.findById(req.sessionId);
+      const session = await prisma.session.findUnique({ where: { id: req.sessionId } });
       if (session) {
-        session.isActive = false;
-        await session.save();
+        await prisma.session.update({ where: { id: session.id }, data: { isActive: false } });
         if (session.refreshTokenId) {
-          await RefreshToken.updateOne({ _id: session.refreshTokenId }, { $set: { isRevoked: true } });
+          await prisma.refreshToken.updateMany({ where: { id: session.refreshTokenId }, data: { isRevoked: true } });
         }
       }
     }
@@ -634,9 +644,9 @@ const logoutAllDevices = async (req, res) => {
     }
 
     // Revoke all refresh tokens
-    await RefreshToken.updateMany({ userId }, { $set: { isRevoked: true } });
+    await prisma.refreshToken.updateMany({ where: { userId }, data: { isRevoked: true } });
     // Revoke all sessions
-    await Session.updateMany({ userId }, { $set: { isActive: false } });
+    await prisma.session.updateMany({ where: { userId }, data: { isActive: false } });
 
     res.clearCookie('refreshToken');
     res.json({ message: 'You have been successfully logged out from all devices.' });
@@ -653,13 +663,25 @@ const getUserSessions = async (req, res) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const sessions = await Session.find({ userId, isActive: true })
-      .sort({ lastActive: -1 })
-      .select('os browser deviceType deviceName ipAddress location lastActive createdAt');
+    const sessions = await prisma.session.findMany({
+      where: { userId, isActive: true },
+      orderBy: { lastActive: 'desc' },
+      select: {
+        id: true,
+        os: true,
+        browser: true,
+        deviceType: true,
+        deviceName: true,
+        ipAddress: true,
+        location: true,
+        lastActive: true,
+        createdAt: true,
+      },
+    });
 
     // Map sessions and identify "This Device" card
     const formattedSessions = sessions.map((s) => ({
-      _id: s._id,
+      _id: s.id,
       os: s.os,
       browser: s.browser,
       deviceType: s.deviceType,
@@ -668,7 +690,7 @@ const getUserSessions = async (req, res) => {
       location: s.location,
       lastActive: s.lastActive,
       createdAt: s.createdAt,
-      isCurrentDevice: req.sessionId && req.sessionId.toString() === s._id.toString() ? true : false,
+      isCurrentDevice: req.sessionId && req.sessionId.toString() === s.id.toString() ? true : false,
     }));
 
     res.json(formattedSessions);
@@ -687,17 +709,16 @@ const revokeSessionById = async (req, res) => {
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
-    const session = await Session.findOne({ _id: sessionId, userId });
+    const session = await prisma.session.findFirst({ where: { id: sessionId, userId } });
     if (!session) {
       return res.status(404).json({ error: 'Session not found or unauthorized' });
     }
 
     // Invalidate
-    session.isActive = false;
-    await session.save();
+    await prisma.session.update({ where: { id: session.id }, data: { isActive: false } });
 
     if (session.refreshTokenId) {
-      await RefreshToken.updateOne({ _id: session.refreshTokenId }, { $set: { isRevoked: true } });
+      await prisma.refreshToken.updateMany({ where: { id: session.refreshTokenId }, data: { isRevoked: true } });
     }
 
     res.json({ message: 'Session revoked successfully.' });
@@ -724,9 +745,9 @@ const verifyGoogleOAuth = async (req, res) => {
     }
 
     // Check if user exists in our records
-    let customer = await Customer.findOne({ email });
-    let agent = await Agent.findOne({ email });
-    let admin = await Admin.findOne({ email });
+    let customer = await prisma.customer.findUnique({ where: { email } });
+    let agent = await prisma.agent.findUnique({ where: { email } });
+    let admin = await prisma.admin.findUnique({ where: { email } });
 
     const user = customer || agent || admin;
 
@@ -759,9 +780,9 @@ const completeGoogleSignup = async (req, res) => {
       return res.status(400).json({ error: 'Email, Phone and Role are required' });
     }
 
-    const existingCustomer = await Customer.findOne({ $or: [{ email }, { phone }] });
-    const existingAgent = await Agent.findOne({ $or: [{ email }, { phone }] });
-    const existingAdmin = await Admin.findOne({ email });
+    const existingCustomer = await prisma.customer.findFirst({ where: { OR: [{ email }, { phone }] } });
+    const existingAgent = await prisma.agent.findFirst({ where: { OR: [{ email }, { phone }] } });
+    const existingAdmin = await prisma.admin.findUnique({ where: { email } });
 
     if (existingCustomer || existingAgent || existingAdmin) {
       return res.status(400).json({ error: 'Email or phone already registered.' });
@@ -769,29 +790,33 @@ const completeGoogleSignup = async (req, res) => {
 
     let newUser;
     if (role === 'agent') {
-      newUser = new Agent({
-        firstName,
-        lastName,
-        email,
-        phone,
-        password: crypto.randomBytes(16).toString('hex'), // Secure random passcode
-        agentId: buildAgentId(),
-        isVerified: true,
-        isActive: false, // Pending admin approval
+      const hashedPassword = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+      newUser = await prisma.agent.create({
+        data: {
+          firstName,
+          lastName,
+          email,
+          phone,
+          password: hashedPassword, // Secure random passcode
+          agentId: await generateUniqueAgentId(),
+          isVerified: true,
+          isActive: false, // Pending admin approval
+        },
       });
     } else {
-      newUser = new Customer({
-        firstName,
-        lastName,
-        email,
-        phone,
-        password: crypto.randomBytes(16).toString('hex'),
-        verified: true,
-        isActive: true,
+      const hashedPassword = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+      newUser = await prisma.customer.create({
+        data: {
+          firstName,
+          lastName,
+          email,
+          phone,
+          password: hashedPassword,
+          verified: true,
+          isActive: true,
+        },
       });
     }
-
-    await newUser.save();
 
     if (role === 'agent') {
       return res.json({
@@ -815,21 +840,23 @@ const requestMobileOTP = async (req, res) => {
       return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number' });
     }
 
-    let customer = await Customer.findOne({ phone });
-    let agent = await Agent.findOne({ phone });
-    
+    let customer = await prisma.customer.findUnique({ where: { phone } });
+    let agent = await prisma.agent.findUnique({ where: { phone } });
+
     const user = customer || agent;
     if (!user) {
       return res.status(404).json({ error: 'Mobile number not registered. Please register first.' });
     }
 
     const userType = customer ? 'customer' : 'agent';
-    
+
     // Generate secure 6-digit SMS OTP
     const otp = generateOTP();
-    user.loginOTP = otp;
-    user.loginOTPExpire = new Date(Date.now() + 5 * 60 * 1000); // 5 Minutes SMS expiry
-    await user.save();
+    const loginOTPExpire = new Date(Date.now() + 5 * 60 * 1000); // 5 Minutes SMS expiry
+    await (customer ? prisma.customer : prisma.agent).update({
+      where: { id: user.id },
+      data: { loginOTP: otp, loginOTPExpire },
+    });
 
     // Dispatches SMS OTP using MSG91 client
     const sent = await sendSMSOTP(phone, otp);
@@ -839,7 +866,7 @@ const requestMobileOTP = async (req, res) => {
 
     res.json({
       message: 'OTP sent to mobile successfully',
-      userId: user._id,
+      userId: user.id,
       userType,
       phone,
     });
@@ -857,10 +884,10 @@ const verifyMobileOTP = async (req, res) => {
       return res.status(400).json({ error: 'Authentication attributes missing.' });
     }
 
-    let UserModel = userType === 'agent' ? Agent : Customer;
+    const delegate = userType === 'agent' ? prisma.agent : prisma.customer;
     let user;
-    if (userId) user = await UserModel.findById(userId);
-    else user = await UserModel.findOne({ phone });
+    if (userId) user = await delegate.findUnique({ where: { id: userId } });
+    else user = await delegate.findUnique({ where: { phone } });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found.' });
@@ -871,35 +898,33 @@ const verifyMobileOTP = async (req, res) => {
     }
 
     if (user.loginOTP !== otp) {
-      user.otpAttempts = (user.otpAttempts || 0) + 1;
-      if (user.otpAttempts >= 5) {
-        user.loginOTP = undefined;
-        user.loginOTPExpire = undefined;
-        user.otpAttempts = 0;
-        await user.save();
+      const otpAttempts = (user.otpAttempts || 0) + 1;
+      if (otpAttempts >= 5) {
+        await delegate.update({
+          where: { id: user.id },
+          data: { loginOTP: null, loginOTPExpire: null, otpAttempts: 0 },
+        });
         return res.status(400).json({ error: 'Too many failed mobile OTP attempts. Code invalidated.' });
       }
-      await user.save();
+      await delegate.update({ where: { id: user.id }, data: { otpAttempts } });
       return res.status(400).json({ error: 'Invalid verification OTP code.' });
     }
 
     // Clear OTP
-    user.loginOTP = undefined;
-    user.loginOTPExpire = undefined;
-    user.otpAttempts = 0;
-    user.lastLogin = new Date();
-    await user.save();
+    const updatedUser = await delegate.update({
+      where: { id: user.id },
+      data: { loginOTP: null, loginOTPExpire: null, otpAttempts: 0, lastLogin: new Date() },
+    });
 
-    const { accessToken } = await establishUserSession(user, userType, req, res, 'Mobile OTP verified login');
+    const { accessToken } = await establishUserSession(updatedUser, userType, req, res, 'Mobile OTP verified login');
 
-    let userData = user.toObject();
-    delete userData.password;
+    let userData = stripSensitive(updatedUser);
 
     res.json({
       message: 'Mobile verification successful',
       token: accessToken,
       user: userData,
-      role: user.role || userType,
+      role: updatedUser.role || userType,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -917,21 +942,25 @@ const registerBiometrics = async (req, res) => {
       return res.status(400).json({ error: 'Biometric credential public parameters are required.' });
     }
 
-    let UserModel = userRole === 'customer' ? Customer : userRole === 'agent' ? Agent : Admin;
-    const user = await UserModel.findById(userId);
+    const delegate = userRole === 'customer' ? prisma.customer : userRole === 'agent' ? prisma.agent : prisma.admin;
+    const user = await delegate.findUnique({ where: { id: userId } });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found.' });
     }
 
     // Store biometric key parameters
-    user.biometrics = {
-      publicKey,
-      credentialId,
-      deviceId: deviceId || 'Web Device Enclave',
-      isActive: true,
-    };
-    await user.save();
+    await delegate.update({
+      where: { id: user.id },
+      data: {
+        biometrics: {
+          publicKey,
+          credentialId,
+          deviceId: deviceId || 'Web Device Enclave',
+          isActive: true,
+        },
+      },
+    });
 
     res.json({ message: 'Biometric credential mapped and registered successfully!' });
   } catch (error) {
@@ -948,8 +977,8 @@ const verifyBiometricsLogin = async (req, res) => {
       return res.status(400).json({ error: 'Biometric signature inputs required.' });
     }
 
-    let UserModel = userType === 'agent' ? Agent : userType === 'admin' ? Admin : Customer;
-    const user = await UserModel.findOne({ email });
+    const delegate = userType === 'agent' ? prisma.agent : userType === 'admin' ? prisma.admin : prisma.customer;
+    const user = await delegate.findUnique({ where: { email } });
 
     if (!user || !user.biometrics || !user.biometrics.isActive || user.biometrics.credentialId !== credentialId) {
       return res.status(401).json({ error: 'Biometric device key matching failed or not registered.' });
@@ -962,8 +991,7 @@ const verifyBiometricsLogin = async (req, res) => {
 
     const { accessToken } = await establishUserSession(user, userType, req, res, 'Biometric enclave signature login');
 
-    let userData = user.toObject();
-    delete userData.password;
+    let userData = stripSensitive(user);
     if (userType === 'admin') delete userData.loginHistory;
 
     res.json({
@@ -1018,30 +1046,34 @@ const verifyOTP = async (req, res) => {
     const user = await findVerifiableUser(email, role);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const delegate = role === 'agent' ? prisma.agent : role === 'admin' ? prisma.admin : prisma.customer;
+
     if (!user.verificationOTPExpire || user.verificationOTPExpire < new Date()) {
       return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
     if (user.verificationOTP !== otp) {
-      user.otpAttempts = (user.otpAttempts || 0) + 1;
-      if (user.otpAttempts >= 5) {
-        user.verificationOTP = undefined;
-        user.verificationOTPExpire = undefined;
-        user.otpAttempts = 0;
-        await user.save();
+      const otpAttempts = (user.otpAttempts || 0) + 1;
+      if (otpAttempts >= 5) {
+        await delegate.update({
+          where: { id: user.id },
+          data: { verificationOTP: null, verificationOTPExpire: null, otpAttempts: 0 },
+        });
         return res.status(400).json({ error: 'Too many failed verification attempts. OTP invalidated.' });
       }
-      await user.save();
+      await delegate.update({ where: { id: user.id }, data: { otpAttempts } });
       return res.status(400).json({ error: 'Invalid OTP code.' });
     }
 
-    if (role === 'agent') user.isVerified = true;
-    else user.verified = true;
-
-    user.verificationOTP = undefined;
-    user.verificationOTPExpire = undefined;
-    user.otpAttempts = 0;
-    await user.save();
+    await delegate.update({
+      where: { id: user.id },
+      data: {
+        ...(role === 'agent' ? { isVerified: true } : { verified: true }),
+        verificationOTP: null,
+        verificationOTPExpire: null,
+        otpAttempts: 0,
+      },
+    });
 
     res.json({
       message: role === 'agent' ? 'Email verified successfully. Agent account pending approval.' : 'Email verified successfully',
@@ -1091,8 +1123,8 @@ const registerAgentApplication = async (req, res) => {
     }
 
     // Check unique email and phone
-    const existingAgent = await Agent.findOne({ $or: [{ email }, { phone }] });
-    const existingCustomer = await Customer.findOne({ $or: [{ email }, { phone }] });
+    const existingAgent = await prisma.agent.findFirst({ where: { OR: [{ email }, { phone }] } });
+    const existingCustomer = await prisma.customer.findFirst({ where: { OR: [{ email }, { phone }] } });
     if (existingAgent || existingCustomer) {
       return res.status(400).json({ error: 'Email or Phone number is already registered' });
     }
@@ -1101,30 +1133,30 @@ const registerAgentApplication = async (req, res) => {
     const agentId = await generateUniqueAgentId();
 
     // Placeholder password to satisfy any legacy checks
-    const dummyPassword = crypto.randomBytes(16).toString('hex');
+    const dummyPassword = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
 
-    const newAgent = new Agent({
-      firstName,
-      lastName,
-      email: email.toLowerCase().trim(),
-      phone,
-      address,
-      documents: {
-        aadhar: cleanAadhaar,
-        panCard: upperPan,
-        drivingLicense: licenseNumber || '',
+    await prisma.agent.create({
+      data: {
+        firstName,
+        lastName,
+        email: email.toLowerCase().trim(),
+        phone,
+        address,
+        documents: {
+          aadhar: cleanAadhaar,
+          panCard: upperPan,
+          drivingLicense: licenseNumber || '',
+        },
+        profileImage: profileImage || '',
+        password: dummyPassword,
+        agentId,
+        role: 'agent',
+        isApproved: false,
+        isVerified: false,
+        registrationStatus: 'pending',
+        temporaryPasscodeSent: false,
       },
-      profileImage: profileImage || '',
-      password: dummyPassword,
-      agentId,
-      role: 'agent',
-      isApproved: false,
-      isVerified: false,
-      registrationStatus: 'pending',
-      temporaryPasscodeSent: false,
     });
-
-    await newAgent.save();
 
     res.status(201).json({
       message: 'Your technician verification request has been submitted successfully. Our administration team will carefully review your documents and activate your FilterNest technician account shortly.',

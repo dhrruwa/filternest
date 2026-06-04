@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
+const prisma = require('./lib/prisma');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -53,10 +53,13 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
+// Rate limiting (global). A SPA makes many calls per page, so 100/15min is far
+// too low for real use. Keep it very lenient in development; reasonable in prod.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'development' ? 10000 : 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
 
@@ -82,10 +85,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/water-filter-service')
+// Database connection (Supabase PostgreSQL via Prisma)
+prisma.$connect()
   .then(async () => {
-    console.log('MongoDB connected');
+    console.log('PostgreSQL (Supabase) connected via Prisma');
     if (process.env.NODE_ENV === 'development') {
       console.log('Database seeding active (development mode)...');
       await seedDefaultAdmin();
@@ -94,7 +97,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/water-fil
       console.log('Database seeding bypassed (production/external environment)...');
     }
   })
-  .catch(err => console.log('MongoDB connection error:', err));
+  .catch(err => console.error('Database connection error:', err));
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));

@@ -23,7 +23,7 @@
     "vite": "^4.4.9"
   },
   "scripts": {
-    "dev": "vite --port 6000",
+    "dev": "vite --port 6001",
     "build": "vite build",
     "preview": "vite preview"
   }

@@ -1,7 +1,5 @@
-const Booking = require('../models/Booking');
-const Customer = require('../models/Customer');
-const Agent = require('../models/Agent');
-const Invoice = require('../models/Invoice');
+const prisma = require('../lib/prisma');
+const { stripSensitive } = require('../lib/sanitize');
 const { v4: uuidv4 } = require('uuid');
 const { createNotification, sendNotification } = require('../services/notificationService');
 const { createMaintenanceSchedules } = require('../services/schedulerService');
@@ -23,37 +21,37 @@ const createBooking = async (req, res) => {
       pincode,
     } = req.body;
 
-    const customer = await Customer.findById(req.userId);
+    const customer = await prisma.customer.findUnique({ where: { id: req.userId } });
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
 
-    const booking = new Booking({
-      bookingId: `BK-${uuidv4().substring(0, 8)}`,
-      customer: req.userId,
-      serviceType,
-      bookingDate: new Date(bookingDate),
-      preferredTimeSlot: {
-        start: preferredTimeSlot?.start ? new Date(preferredTimeSlot.start) : null,
-        end: preferredTimeSlot?.end ? new Date(preferredTimeSlot.end) : null,
-      },
-      serviceLocation: {
-        type: 'Point',
-        coordinates: [longitude, latitude],
-        address: {
-          street: address,
-          city: city || customer.address?.city,
-          state: state || customer.address?.state,
-          pincode: pincode || customer.address?.pincode,
-          country: customer.address?.country || 'India',
-          landmark,
+    const booking = await prisma.booking.create({
+      data: {
+        bookingId: `BK-${uuidv4().substring(0, 8)}`,
+        customerId: req.userId,
+        serviceType,
+        bookingDate: new Date(bookingDate),
+        preferredTimeSlot: {
+          start: preferredTimeSlot?.start ? new Date(preferredTimeSlot.start) : null,
+          end: preferredTimeSlot?.end ? new Date(preferredTimeSlot.end) : null,
         },
+        serviceLocation: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
+          address: {
+            street: address,
+            city: city || customer.address?.city,
+            state: state || customer.address?.state,
+            pincode: pincode || customer.address?.pincode,
+            country: customer.address?.country || 'India',
+            landmark,
+          },
+        },
+        description,
+        status: 'pending',
       },
-      description,
-      status: 'pending',
     });
-
-    await booking.save();
 
     // Create notification
     await createNotification(
@@ -62,7 +60,7 @@ const createBooking = async (req, res) => {
       'booking_confirmed',
       `Your booking for ${serviceType} has been received. Our team will contact you soon.`,
       'Booking Received',
-      { relatedBooking: booking._id }
+      { relatedBooking: booking.id }
     );
 
     res.status(201).json({
@@ -77,11 +75,17 @@ const createBooking = async (req, res) => {
 // Get Customer Bookings
 const getCustomerBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ customer: req.userId })
-      .populate('assignedAgent', 'firstName lastName phone profileImage rating')
-      .sort({ createdAt: -1 });
+    const bookings = await prisma.booking.findMany({
+      where: { customerId: req.userId },
+      include: {
+        assignedAgent: {
+          select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true, rating: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    res.json(bookings);
+    res.json(stripSensitive(bookings));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -90,20 +94,24 @@ const getCustomerBookings = async (req, res) => {
 // Get Booking Details
 const getBookingDetails = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.bookingId)
-      .populate('customer')
-      .populate('assignedAgent');
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.bookingId },
+      include: {
+        customer: true,
+        assignedAgent: true,
+      },
+    });
 
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
 
     // Check authorization
-    if (booking.customer._id.toString() !== req.userId && req.userRole !== 'admin') {
+    if (booking.customer.id.toString() !== req.userId && req.userRole !== 'admin') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    res.json(booking);
+    res.json(stripSensitive(booking));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -114,27 +122,27 @@ const updateBookingStatus = async (req, res) => {
   try {
     const { status, notes, photos } = req.body;
 
-    const booking = await Booking.findById(req.params.bookingId);
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.bookingId } });
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
 
     // Check authorization: Must be the assigned agent or admin
-    if (req.userRole !== 'admin' && (!booking.assignedAgent || booking.assignedAgent.toString() !== req.userId)) {
+    if (req.userRole !== 'admin' && (!booking.assignedAgentId || booking.assignedAgentId.toString() !== req.userId)) {
       return res.status(403).json({ error: 'Unauthorized. You are not assigned to this booking.' });
     }
 
-    booking.status = status;
-    if (notes) booking.agentNotes = notes;
-    if (photos) booking.photos = photos;
+    const updateData = { status };
+    if (notes) updateData.agentNotes = notes;
+    if (photos) updateData.photos = photos;
 
     if (status === 'completed') {
-      booking.completedAt = new Date();
+      updateData.completedAt = new Date();
       // Create maintenance schedules
-      await createMaintenanceSchedules(booking._id);
+      await createMaintenanceSchedules(booking.id);
 
       // Check if an invoice is already registered for this booking
-      let invoice = await Invoice.findOne({ booking: booking._id });
+      let invoice = await prisma.invoice.findUnique({ where: { bookingId: booking.id } });
       if (!invoice) {
         const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
         const cost = booking.cost || {
@@ -144,50 +152,54 @@ const updateBookingStatus = async (req, res) => {
           totalCost: 236,
         };
 
-        invoice = await Invoice.create({
-          invoiceNumber,
-          booking: booking._id,
-          customer: booking.customer,
-          agent: booking.assignedAgent || null,
-          issueDate: new Date(),
-          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days net
-          items: [
-            {
-              description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
-              quantity: 1,
-              unitPrice: cost.serviceFee || 200,
-              total: cost.serviceFee || 200,
-            }
-          ],
-          subtotal: cost.serviceFee || 200,
-          tax: cost.tax || 36,
-          taxPercentage: 18,
-          total: cost.totalCost || 236,
-          paymentStatus: booking.paymentStatus || 'pending',
-          paymentMethod: booking.paymentMethod || undefined,
-          paymentDate: booking.paymentStatus === 'completed' ? new Date() : undefined,
+        invoice = await prisma.invoice.create({
+          data: {
+            invoiceNumber,
+            bookingId: booking.id,
+            customerId: booking.customerId,
+            agentId: booking.assignedAgentId || null,
+            issueDate: new Date(),
+            dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days net
+            items: [
+              {
+                description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
+                quantity: 1,
+                unitPrice: cost.serviceFee || 200,
+                total: cost.serviceFee || 200,
+              }
+            ],
+            subtotal: cost.serviceFee || 200,
+            tax: cost.tax || 36,
+            taxPercentage: 18,
+            total: cost.totalCost || 236,
+            paymentStatus: booking.paymentStatus || 'pending',
+            paymentMethod: booking.paymentMethod || undefined,
+            paymentDate: booking.paymentStatus === 'completed' ? new Date() : undefined,
+          },
         });
 
-        // Link the invoice to the booking
-        booking.invoice = invoice._id;
+        // Invoice link is owned by Invoice.bookingId (set above); no Booking-side update needed.
       }
     }
 
-    await booking.save();
+    const updatedBooking = await prisma.booking.update({
+      where: { id: booking.id },
+      data: updateData,
+    });
 
     // Notify customer
     await createNotification(
-      booking.customer,
+      updatedBooking.customerId,
       'Customer',
       'status_update',
       `Your service status has been updated to ${status}`,
       `Service Status Updated`,
-      { relatedBooking: booking._id }
+      { relatedBooking: updatedBooking.id }
     );
 
     res.json({
       message: 'Booking status updated',
-      booking,
+      booking: updatedBooking,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -199,24 +211,28 @@ const cancelBooking = async (req, res) => {
   try {
     const { reason } = req.body;
 
-    const booking = await Booking.findById(req.params.bookingId);
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.bookingId } });
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
 
     // Check authorization: Booking must belong to the logged-in customer OR caller must be admin
-    if (booking.customer.toString() !== req.userId && req.userRole !== 'admin') {
+    if (booking.customerId.toString() !== req.userId && req.userRole !== 'admin') {
       return res.status(403).json({ error: 'Unauthorized to cancel this booking' });
     }
 
-    booking.status = 'cancelled';
-    booking.cancelledAt = new Date();
-    booking.cancellationReason = reason;
-    await booking.save();
+    const updatedBooking = await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancellationReason: reason,
+      },
+    });
 
     res.json({
       message: 'Booking cancelled successfully',
-      booking,
+      booking: updatedBooking,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -232,13 +248,13 @@ const submitFeedback = async (req, res) => {
       return res.status(400).json({ error: 'Rating must be between 1 and 5' });
     }
 
-    const booking = await Booking.findById(req.params.bookingId);
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.bookingId } });
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
 
     // Verify ownership
-    if (booking.customer.toString() !== req.userId) {
+    if (booking.customerId.toString() !== req.userId) {
       return res.status(403).json({ error: 'Unauthorized to review this booking' });
     }
 
@@ -247,39 +263,50 @@ const submitFeedback = async (req, res) => {
       return res.status(400).json({ error: 'Feedback can only be submitted for completed bookings' });
     }
 
-    booking.feedback = {
-      rating,
-      review: review || '',
-      submittedAt: new Date(),
-    };
-
-    await booking.save();
+    const updatedBooking = await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        feedback: {
+          rating,
+          review: review || '',
+          submittedAt: new Date(),
+        },
+      },
+    });
 
     // Update Agent's Average Rating
-    if (booking.assignedAgent) {
-      const Agent = require('../models/Agent');
-      const agent = await Agent.findById(booking.assignedAgent);
+    if (updatedBooking.assignedAgentId) {
+      const agent = await prisma.agent.findUnique({ where: { id: updatedBooking.assignedAgentId } });
       if (agent) {
         // Find all completed bookings with feedback for this agent
-        const completedBookings = await Booking.find({
-          assignedAgent: booking.assignedAgent,
-          status: 'completed',
-          'feedback.rating': { $exists: true },
+        const completedBookings = await prisma.booking.findMany({
+          where: {
+            assignedAgentId: updatedBooking.assignedAgentId,
+            status: 'completed',
+            feedback: { not: null },
+          },
         });
 
-        const totalRatings = completedBookings.length;
-        const totalRatingSum = completedBookings.reduce((sum, b) => sum + b.feedback.rating, 0);
-        
-        agent.totalRatings = totalRatings;
-        agent.rating = totalRatings > 0 ? parseFloat((totalRatingSum / totalRatings).toFixed(1)) : 0;
-        
-        await agent.save();
+        const ratedBookings = completedBookings.filter(
+          (b) => b.feedback && b.feedback.rating != null
+        );
+
+        const totalRatings = ratedBookings.length;
+        const totalRatingSum = ratedBookings.reduce((sum, b) => sum + b.feedback.rating, 0);
+
+        await prisma.agent.update({
+          where: { id: agent.id },
+          data: {
+            totalRatings,
+            rating: totalRatings > 0 ? parseFloat((totalRatingSum / totalRatings).toFixed(1)) : 0,
+          },
+        });
       }
     }
 
     res.json({
       message: 'Feedback submitted successfully',
-      booking,
+      booking: updatedBooking,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -289,15 +316,26 @@ const submitFeedback = async (req, res) => {
 // Get Public Reviews for Home Page Reviews Board
 const getPublicReviews = async (req, res) => {
   try {
-    const reviews = await Booking.find({
-      'feedback.rating': { $exists: true },
-    })
-      .populate('customer', 'firstName lastName')
-      .populate('assignedAgent', 'firstName lastName')
-      .sort({ 'feedback.submittedAt': -1 })
-      .limit(10);
+    const bookings = await prisma.booking.findMany({
+      where: {
+        feedback: { not: null },
+      },
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true } },
+        assignedAgent: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
 
-    res.json(reviews);
+    const reviews = bookings
+      .filter((b) => b.feedback && b.feedback.rating != null)
+      .sort((a, b) => {
+        const aDate = a.feedback?.submittedAt ? new Date(a.feedback.submittedAt).getTime() : 0;
+        const bDate = b.feedback?.submittedAt ? new Date(b.feedback.submittedAt).getTime() : 0;
+        return bDate - aDate;
+      })
+      .slice(0, 10);
+
+    res.json(stripSensitive(reviews));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
