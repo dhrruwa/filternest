@@ -49,7 +49,7 @@ check_port() {
 }
 
 echo "Checking ports..."
-for port in 5001 3000 4000 6000; do
+for port in 5001 3000 4000 6001; do
     if ! check_port $port; then
         echo -e "${YELLOW}Attempting to free port $port...${NC}"
         lsof -ti:$port | xargs kill -9 2>/dev/null || true
@@ -96,7 +96,7 @@ sleep 3
 
 # Start Admin Panel
 echo ""
-echo -e "${BLUE}[4/4]${NC} Starting Admin Panel on port ${BLUE}6000${NC}..."
+echo -e "${BLUE}[4/4]${NC} Starting Admin Panel on port ${BLUE}6001${NC}..."
 cd ../admin-panel
 npm install > /dev/null 2>&1 || true
 npm run dev &
@@ -115,7 +115,7 @@ echo ""
 echo -e "${GREEN}Applications:${NC}"
 echo "  🛒 Customer App:  ${BLUE}http://localhost:3000${NC}"
 echo "  🔧 Agent App:     ${BLUE}http://localhost:4000${NC}"
-echo "  ⚙️  Admin Panel:   ${BLUE}http://localhost:6000${NC}"
+echo "  ⚙️  Admin Panel:   ${BLUE}http://localhost:6001${NC}"
 echo "  📡 Backend API:   ${BLUE}http://localhost:5001${NC}"
 echo ""
 echo -e "${YELLOW}Test Credentials:${NC}"

@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const Customer = require('../models/Customer');
+const bcrypt = require('bcryptjs');
+const prisma = require('../lib/prisma');
 
 const seedTestCustomer = async () => {
   try {
@@ -23,16 +23,18 @@ const seedTestCustomer = async () => {
         role: 'customer',
         verified: true,
         isActive: true,
-      }
+      },
     ];
 
     for (const customerData of customersToSeed) {
-      const existingCustomer = await Customer.findOne({ email: customerData.email });
+      const existingCustomer = await prisma.customer.findUnique({ where: { email: customerData.email } });
       if (existingCustomer) {
         console.log(`✓ Customer already exists: ${customerData.email}`);
       } else {
-        const newCustomer = new Customer(customerData);
-        await newCustomer.save();
+        const hashedPassword = await bcrypt.hash(customerData.password, 10);
+        await prisma.customer.create({
+          data: { ...customerData, password: hashedPassword },
+        });
         console.log(`✓ Default customer account created successfully: ${customerData.email} (${customerData.password})`);
       }
     }

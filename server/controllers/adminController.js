@@ -1,16 +1,9 @@
-const Customer = require('../models/Customer');
-const Agent = require('../models/Agent');
-const Booking = require('../models/Booking');
-const MaintenanceSchedule = require('../models/MaintenanceSchedule');
-const Payment = require('../models/Payment');
-const SupportTicket = require('../models/SupportTicket');
-const Notification = require('../models/Notification');
-const Invoice = require('../models/Invoice');
+const prisma = require('../lib/prisma');
+const bcrypt = require('bcryptjs');
+const { stripSensitive } = require('../lib/sanitize');
 const { createNotification, sendNotification } = require('../services/notificationService');
 
 // Verification & Image Upload Core Imports
-const EmailVerification = require('../models/EmailVerification');
-const AadhaarVerification = require('../models/AadhaarVerification');
 const otpService = require('../services/otpService');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
@@ -26,7 +19,7 @@ const generateUniqueAgentId = async () => {
   while (attempts < 10) {
     const randomDigits = Math.floor(100000 + Math.random() * 900000);
     const id = `AG${randomDigits}`;
-    const exists = await Agent.findOne({ agentId: id });
+    const exists = await prisma.agent.findUnique({ where: { agentId: id } });
     if (!exists) return id;
     attempts++;
   }
@@ -36,15 +29,17 @@ const generateUniqueAgentId = async () => {
 // Get Dashboard Statistics
 const getDashboardStats = async (req, res) => {
   try {
-    const totalCustomers = await Customer.countDocuments();
-    const totalAgents = await Agent.countDocuments();
-    const totalBookings = await Booking.countDocuments();
-    const completedBookings = await Booking.countDocuments({ status: 'completed' });
-    const pendingBookings = await Booking.countDocuments({ status: 'pending' });
-    const activeAgents = await Agent.countDocuments({ status: 'available' });
-    const upcomingReminders = await MaintenanceSchedule.countDocuments({
-      status: 'pending',
-      nextServiceDate: { $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    const totalCustomers = await prisma.customer.count();
+    const totalAgents = await prisma.agent.count();
+    const totalBookings = await prisma.booking.count();
+    const completedBookings = await prisma.booking.count({ where: { status: 'completed' } });
+    const pendingBookings = await prisma.booking.count({ where: { status: 'pending' } });
+    const activeAgents = await prisma.agent.count({ where: { status: 'available' } });
+    const upcomingReminders = await prisma.maintenanceSchedule.count({
+      where: {
+        status: 'pending',
+        nextServiceDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+      },
     });
 
     res.json({
@@ -68,25 +63,25 @@ const getAllCustomers = async (req, res) => {
     const query = {};
 
     if (search) {
-      const escapeRegex = (str) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const safeSearch = escapeRegex(search);
-      query.$or = [
-        { firstName: { $regex: safeSearch, $options: 'i' } },
-        { lastName: { $regex: safeSearch, $options: 'i' } },
-        { email: { $regex: safeSearch, $options: 'i' } },
-        { phone: { $regex: safeSearch, $options: 'i' } },
+      query.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    const customers = await Customer.find(query)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const customers = await prisma.customer.findMany({
+      where: query,
+      take: limit * 1,
+      skip: (page - 1) * limit,
+      orderBy: { createdAt: 'desc' },
+    });
 
-    const total = await Customer.countDocuments(query);
+    const total = await prisma.customer.count({ where: query });
 
     res.json({
-      customers,
+      customers: stripSensitive(customers),
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total,
@@ -106,15 +101,17 @@ const getAllAgents = async (req, res) => {
       query.status = status;
     }
 
-    const agents = await Agent.find(query)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const agents = await prisma.agent.findMany({
+      where: query,
+      take: limit * 1,
+      skip: (page - 1) * limit,
+      orderBy: { createdAt: 'desc' },
+    });
 
-    const total = await Agent.countDocuments(query);
+    const total = await prisma.agent.count({ where: query });
 
     res.json({
-      agents,
+      agents: stripSensitive(agents),
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total,
@@ -165,44 +162,45 @@ const createAgent = async (req, res) => {
     }
 
     const generatedAgentId = await generateUniqueAgentId();
-    const existingAgent = await Agent.findOne({
-      $or: [{ email }, { phone }, { agentId: generatedAgentId }],
+    const existingAgent = await prisma.agent.findFirst({
+      where: { OR: [{ email }, { phone }, { agentId: generatedAgentId }] },
     });
-    const existingCustomer = await Customer.findOne({ $or: [{ email }, { phone }] });
+    const existingCustomer = await prisma.customer.findFirst({ where: { OR: [{ email }, { phone }] } });
 
     if (existingAgent || existingCustomer) {
       return res.status(400).json({ error: 'Email or phone already exists' });
     }
 
-    const agent = new Agent({
-      firstName,
-      lastName,
-      email: email.toLowerCase().trim(),
-      phone,
-      password: passcode,
-      agentId: generatedAgentId,
-      profileImage,
-      licenseNumber,
-      address,
-      role: 'agent',
-      status: 'offline',
-      isVerified: true,
-      isActive: true,
-      isApproved: true,
-      registrationStatus: 'active',
-      approvalDate: new Date(),
-      approvedBy: req.userId,
-      documents: {
-        aadhar: cleanAadhaar,
-        panCard: upperPan,
+    const hashedPassword = await bcrypt.hash(passcode, 10);
+
+    const agent = await prisma.agent.create({
+      data: {
+        firstName,
+        lastName,
+        email: email.toLowerCase().trim(),
+        phone,
+        password: hashedPassword,
+        agentId: generatedAgentId,
+        profileImage,
+        address,
+        role: 'agent',
+        status: 'offline',
+        isVerified: true,
+        isActive: true,
+        isApproved: true,
+        registrationStatus: 'active',
+        approvalDate: new Date(),
+        approvedBy: req.userId,
+        documents: {
+          aadhar: cleanAadhaar,
+          panCard: upperPan,
+        },
       },
     });
 
-    await agent.save();
-
     res.status(201).json({
       message: 'Agent created successfully',
-      agent: agent.toJSON(),
+      agent: stripSensitive(agent),
       login: {
         agentId: generatedAgentId,
         passcode,
@@ -221,22 +219,27 @@ const approveAgent = async (req, res) => {
       return res.status(400).json({ error: 'A secure passcode (minimum 6 characters) is required to approve the technician.' });
     }
 
-    const agent = await Agent.findById(req.params.agentId);
+    const existingAgent = await prisma.agent.findUnique({ where: { id: req.params.agentId } });
 
-    if (!agent) {
+    if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    // Set passcode and approved status
-    agent.password = passcode;
-    agent.isApproved = true;
-    agent.isVerified = true;
-    agent.isActive = true;
-    agent.registrationStatus = 'active';
-    agent.approvalDate = new Date();
-    agent.approvedBy = req.userId;
+    const hashedPassword = await bcrypt.hash(passcode, 10);
 
-    await agent.save();
+    // Set passcode and approved status
+    const agent = await prisma.agent.update({
+      where: { id: req.params.agentId },
+      data: {
+        password: hashedPassword,
+        isApproved: true,
+        isVerified: true,
+        isActive: true,
+        registrationStatus: 'active',
+        approvalDate: new Date(),
+        approvedBy: req.userId,
+      },
+    });
 
     // Onboarding HTML Email content
     const emailContent = `
@@ -275,7 +278,7 @@ const approveAgent = async (req, res) => {
             <h1>Congratulations, ${agent.firstName}!</h1>
             <p>Your FilterNest Service Technician application has been approved by our administration team.</p>
             <p>You have been onboarded as a certified care specialist. Below are your secure login credentials:</p>
-            
+
             <div class="credential-box">
               <div class="credential-row">
                 <span class="label">TECHNICIAN ID</span>
@@ -290,13 +293,13 @@ const approveAgent = async (req, res) => {
                 <span class="value" style="font-family: inherit;">${agent.email}</span>
               </div>
             </div>
-            
+
             <p>To calibrate your specialist workspace and view your scheduled service jobs, click the secure portal login link below:</p>
-            
+
             <div class="btn-container">
               <a href="http://localhost:3000/login" class="btn">Access Technician Portal</a>
             </div>
-            
+
             <div class="notice">
               <strong>🔒 Security Policy:</strong> Please memorize your secure login passcode immediately. Never share your passcode, technician credentials, or Aadhaar details with any third parties. Our team will never ask for your login passcode.
             </div>
@@ -314,7 +317,7 @@ const approveAgent = async (req, res) => {
 
     res.json({
       message: 'Agent approved successfully and onboarding credentials email dispatched.',
-      agent,
+      agent: stripSensitive(agent),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -333,22 +336,26 @@ const getAllBookings = async (req, res) => {
 
     if (startDate && endDate) {
       query.bookingDate = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
+        gte: new Date(startDate),
+        lte: new Date(endDate),
       };
     }
 
-    const bookings = await Booking.find(query)
-      .populate('customer', 'firstName lastName phone email address')
-      .populate('assignedAgent', 'firstName lastName agentId')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const bookings = await prisma.booking.findMany({
+      where: query,
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true, address: true } },
+        assignedAgent: { select: { id: true, firstName: true, lastName: true, agentId: true } },
+      },
+      take: limit * 1,
+      skip: (page - 1) * limit,
+      orderBy: { createdAt: 'desc' },
+    });
 
-    const total = await Booking.countDocuments(query);
+    const total = await prisma.booking.count({ where: query });
 
     res.json({
-      bookings,
+      bookings: stripSensitive(bookings),
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total,
@@ -363,15 +370,16 @@ const assignAgent = async (req, res) => {
   try {
     const { bookingId, agentId } = req.body;
 
-    const booking = await Booking.findByIdAndUpdate(
-      bookingId,
-      { assignedAgent: agentId, status: 'confirmed' },
-      { new: true }
-    ).populate('assignedAgent').populate('customer');
-
-    if (!booking) {
+    const existingBooking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!existingBooking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
+
+    const booking = await prisma.booking.update({
+      where: { id: bookingId },
+      data: { assignedAgentId: agentId, status: 'confirmed' },
+      include: { assignedAgent: true, customer: true },
+    });
 
     // Format the booking date beautifully
     const formattedDate = new Date(booking.bookingDate).toLocaleDateString('en-US', {
@@ -418,7 +426,7 @@ const assignAgent = async (req, res) => {
 
     res.json({
       message: 'Agent assigned successfully',
-      booking,
+      booking: stripSensitive(booking),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -428,14 +436,18 @@ const assignAgent = async (req, res) => {
 // Get Upcoming Reminders
 const getUpcomingReminders = async (req, res) => {
   try {
-    const reminders = await MaintenanceSchedule.find({
-      status: 'pending',
-      nextServiceDate: { $lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
-    })
-      .populate('customer', 'firstName lastName email phone')
-      .sort({ nextServiceDate: 1 });
+    const reminders = await prisma.maintenanceSchedule.findMany({
+      where: {
+        status: 'pending',
+        nextServiceDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      },
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      },
+      orderBy: { nextServiceDate: 'asc' },
+    });
 
-    res.json(reminders);
+    res.json(stripSensitive(reminders));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -446,20 +458,25 @@ const unassignAgent = async (req, res) => {
   try {
     const { bookingId } = req.body;
 
-    const booking = await Booking.findById(bookingId).populate('assignedAgent').populate('customer');
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { assignedAgent: true, customer: true },
+    });
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
 
     const previousAgent = booking.assignedAgent;
-    
-    booking.assignedAgent = undefined;
-    booking.status = 'pending';
-    await booking.save();
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id: bookingId },
+      data: { assignedAgentId: null, status: 'pending' },
+      include: { assignedAgent: true, customer: true },
+    });
 
     // 1. Notify the previous Agent that they have been unassigned
     if (previousAgent) {
-      const agentMsg = `You have been unassigned from service job (Booking ID: ${booking.bookingId}).`;
+      const agentMsg = `You have been unassigned from service job (Booking ID: ${updatedBooking.bookingId}).`;
       const agentNotification = await createNotification(
         previousAgent._id,
         'Agent',
@@ -467,7 +484,7 @@ const unassignAgent = async (req, res) => {
         agentMsg,
         'Job Unassignment Alert',
         {
-          relatedBooking: booking._id,
+          relatedBooking: updatedBooking._id,
           channels: { inApp: true, email: true, sms: false, whatsapp: false }
         }
       );
@@ -475,16 +492,16 @@ const unassignAgent = async (req, res) => {
     }
 
     // 2. Notify the Customer that their booking is pending new assignment
-    if (booking.customer) {
-      const customerMsg = `Your service booking (Booking ID: ${booking.bookingId}) has been updated. We are re-assigning a new agent to your job shortly.`;
+    if (updatedBooking.customer) {
+      const customerMsg = `Your service booking (Booking ID: ${updatedBooking.bookingId}) has been updated. We are re-assigning a new agent to your job shortly.`;
       const customerNotification = await createNotification(
-        booking.customer._id,
+        updatedBooking.customer._id,
         'Customer',
         'status_update',
         customerMsg,
         'Booking Update: Re-assigning Agent',
         {
-          relatedBooking: booking._id,
+          relatedBooking: updatedBooking._id,
           channels: { inApp: true, email: true, sms: false, whatsapp: false }
         }
       );
@@ -493,7 +510,7 @@ const unassignAgent = async (req, res) => {
 
     res.json({
       message: 'Agent unassigned successfully',
-      booking,
+      booking: stripSensitive(updatedBooking),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -505,18 +522,18 @@ const deleteAgent = async (req, res) => {
   try {
     const { agentId } = req.params;
 
-    const agent = await Agent.findById(agentId);
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
     // Unassign this agent from any active bookings
-    await Booking.updateMany(
-      { assignedAgent: agentId, status: { $ne: 'completed' } },
-      { $unset: { assignedAgent: "" }, status: 'pending' }
-    );
+    await prisma.booking.updateMany({
+      where: { assignedAgentId: agentId, status: { not: 'completed' } },
+      data: { assignedAgentId: null, status: 'pending' },
+    });
 
-    await Agent.findByIdAndDelete(agentId);
+    await prisma.agent.delete({ where: { id: agentId } });
 
     res.json({
       message: 'Agent deleted successfully',
@@ -543,7 +560,7 @@ const transporter = nodemailer.createTransport({
 const sendEmailVerification = async (req, res) => {
   try {
     const { email } = req.body;
-    
+
     if (!email) {
       return res.status(400).json({ error: 'Email address is required.' });
     }
@@ -554,11 +571,11 @@ const sendEmailVerification = async (req, res) => {
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
 
     // Save or update verification entry in database
-    await EmailVerification.findOneAndUpdate(
-      { email },
-      { token, isVerified: false, expiresAt },
-      { upsert: true, new: true }
-    );
+    await prisma.emailVerification.upsert({
+      where: { email },
+      update: { token, isVerified: false, expiresAt },
+      create: { email, token, isVerified: false, expiresAt },
+    });
 
     // Dynamic, secure verification link pointing to the backend verify-email endpoint
     const verificationLink = `http://localhost:5001/api/admin/verify-email?token=${token}`;
@@ -643,7 +660,7 @@ const renderHtmlStatusPage = ({ success, title, message }) => `
 <body>
   <div class="card">
     <div class="badge ${success ? 'success' : 'error'}">
-      ${success 
+      ${success
         ? '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor" style="width:32px;height:32px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>'
         : '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:32px;height:32px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>'
       }
@@ -669,7 +686,7 @@ const verifyEmail = async (req, res) => {
       }));
     }
 
-    const verification = await EmailVerification.findOne({ token });
+    const verification = await prisma.emailVerification.findUnique({ where: { token } });
 
     if (!verification) {
       return res.status(404).send(renderHtmlStatusPage({
@@ -688,8 +705,10 @@ const verifyEmail = async (req, res) => {
     }
 
     // Update status to verified
-    verification.isVerified = true;
-    await verification.save();
+    await prisma.emailVerification.update({
+      where: { id: verification.id },
+      data: { isVerified: true },
+    });
 
     res.send(renderHtmlStatusPage({
       success: true,
@@ -713,7 +732,7 @@ const checkEmailVerification = async (req, res) => {
       return res.status(400).json({ error: 'Email query parameter is required.' });
     }
 
-    const verification = await EmailVerification.findOne({ email });
+    const verification = await prisma.emailVerification.findUnique({ where: { email } });
     if (!verification) {
       return res.json({ email, isVerified: false });
     }
@@ -804,7 +823,7 @@ const sendAadhaarOTP = async (req, res) => {
     }
 
     // Check rate limit / resend cooldown
-    const existingVerification = await AadhaarVerification.findOne({ aadharNumber: cleanAadhaar });
+    const existingVerification = await prisma.aadhaarVerification.findUnique({ where: { aadharNumber: cleanAadhaar } });
     if (existingVerification && existingVerification.cooldownUntil > new Date()) {
       const waitSeconds = Math.ceil((existingVerification.cooldownUntil - new Date()) / 1000);
       return res.status(429).json({ error: `Please wait ${waitSeconds} seconds before requesting a new OTP.` });
@@ -832,10 +851,10 @@ const sendAadhaarOTP = async (req, res) => {
 
         if (response.data && response.data.success && response.data.data?.client_id) {
           const clientId = response.data.data.client_id;
-          
-          await AadhaarVerification.findOneAndUpdate(
-            { aadharNumber: cleanAadhaar },
-            {
+
+          await prisma.aadhaarVerification.upsert({
+            where: { aadharNumber: cleanAadhaar },
+            update: {
               phone: cleanPhone,
               clientId,
               attempts: 0,
@@ -843,8 +862,16 @@ const sendAadhaarOTP = async (req, res) => {
               expiresAt,
               cooldownUntil
             },
-            { upsert: true, new: true }
-          );
+            create: {
+              aadharNumber: cleanAadhaar,
+              phone: cleanPhone,
+              clientId,
+              attempts: 0,
+              isVerified: false,
+              expiresAt,
+              cooldownUntil
+            },
+          });
 
           console.log(`
 ✅ SMS Gateway Connected (Surepass e-KYC)
@@ -870,9 +897,9 @@ const sendAadhaarOTP = async (req, res) => {
 
     // 2. Sandbox fallback code if token not set
     const otp = crypto.randomInt(100000, 999999).toString();
-    await AadhaarVerification.findOneAndUpdate(
-      { aadharNumber: cleanAadhaar },
-      {
+    await prisma.aadhaarVerification.upsert({
+      where: { aadharNumber: cleanAadhaar },
+      update: {
         phone: cleanPhone,
         otp,
         clientId: 'sandbox_client_' + Date.now(),
@@ -881,8 +908,17 @@ const sendAadhaarOTP = async (req, res) => {
         expiresAt,
         cooldownUntil
       },
-      { upsert: true, new: true }
-    );
+      create: {
+        aadharNumber: cleanAadhaar,
+        phone: cleanPhone,
+        otp,
+        clientId: 'sandbox_client_' + Date.now(),
+        attempts: 0,
+        isVerified: false,
+        expiresAt,
+        cooldownUntil
+      },
+    });
 
     // Dispatch SMS or email fallback
     const isSandboxActive = !otpService.isSMSConfigured();
@@ -910,7 +946,7 @@ const verifyAadhaarOTP = async (req, res) => {
     }
 
     const cleanAadhaar = aadharNumber.replace(/\s/g, '');
-    const verification = await AadhaarVerification.findOne({ aadharNumber: cleanAadhaar });
+    const verification = await prisma.aadhaarVerification.findUnique({ where: { aadharNumber: cleanAadhaar } });
 
     if (!verification) {
       return res.status(404).json({ error: 'Verification session has expired or does not exist.' });
@@ -949,9 +985,11 @@ const verifyAadhaarOTP = async (req, res) => {
 
         if (response.data && response.data.success && response.data.status_code === 200) {
           console.log('[SUREPASS SUCCESS] e-KYC Verification successful!', response.data.data?.full_name);
-          
-          verification.isVerified = true;
-          await verification.save();
+
+          await prisma.aadhaarVerification.update({
+            where: { id: verification.id },
+            data: { isVerified: true },
+          });
 
           return res.json({
             message: 'Aadhaar verified successfully via Surepass.',
@@ -963,13 +1001,15 @@ const verifyAadhaarOTP = async (req, res) => {
         }
       } catch (surepassError) {
         console.error(`[SUREPASS ERROR] Verification failed: ${surepassError.response?.data?.message || surepassError.message}`);
-        
-        verification.attempts += 1;
-        await verification.save();
 
-        const remaining = 3 - verification.attempts;
+        const updatedVerification = await prisma.aadhaarVerification.update({
+          where: { id: verification.id },
+          data: { attempts: { increment: 1 } },
+        });
+
+        const remaining = 3 - updatedVerification.attempts;
         const errText = surepassError.response?.data?.message || surepassError.message || 'OTP verification failed';
-        
+
         if (remaining <= 0) {
           return res.status(403).json({ error: `Too many failed attempts. Verification locked. ${errText}` });
         } else {
@@ -983,10 +1023,12 @@ const verifyAadhaarOTP = async (req, res) => {
 
     // 2. Sandbox Verification Check
     if (verification.otp !== otp) {
-      verification.attempts += 1;
-      await verification.save();
+      const updatedVerification = await prisma.aadhaarVerification.update({
+        where: { id: verification.id },
+        data: { attempts: { increment: 1 } },
+      });
 
-      const remaining = 3 - verification.attempts;
+      const remaining = 3 - updatedVerification.attempts;
       if (remaining <= 0) {
         return res.status(403).json({ error: 'Too many failed attempts. Verification locked. Please request a new OTP.' });
       } else {
@@ -998,8 +1040,10 @@ const verifyAadhaarOTP = async (req, res) => {
     }
 
     // Verification successful
-    verification.isVerified = true;
-    await verification.save();
+    await prisma.aadhaarVerification.update({
+      where: { id: verification.id },
+      data: { isVerified: true },
+    });
 
     res.json({
       message: 'Aadhaar verified successfully.',
@@ -1013,22 +1057,25 @@ const verifyAadhaarOTP = async (req, res) => {
 const rejectAgent = async (req, res) => {
   try {
     const { rejectedReason } = req.body;
-    const agent = await Agent.findById(req.params.agentId);
+    const existingAgent = await prisma.agent.findUnique({ where: { id: req.params.agentId } });
 
-    if (!agent) {
+    if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    agent.isApproved = false;
-    agent.registrationStatus = 'rejected';
-    agent.rejectedReason = rejectedReason || 'Application does not meet FilterNest workforce guidelines.';
-    agent.isActive = false;
-
-    await agent.save();
+    const agent = await prisma.agent.update({
+      where: { id: req.params.agentId },
+      data: {
+        isApproved: false,
+        registrationStatus: 'rejected',
+        rejectedReason: rejectedReason || 'Application does not meet FilterNest workforce guidelines.',
+        isActive: false,
+      },
+    });
 
     res.json({
       message: 'Agent application rejected successfully',
-      agent,
+      agent: stripSensitive(agent),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1037,25 +1084,27 @@ const rejectAgent = async (req, res) => {
 
 const suspendAgent = async (req, res) => {
   try {
-    const agent = await Agent.findById(req.params.agentId);
+    const existingAgent = await prisma.agent.findUnique({ where: { id: req.params.agentId } });
 
-    if (!agent) {
+    if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    agent.registrationStatus = 'suspended';
-    agent.isActive = false;
-    agent.status = 'offline';
-
-    await agent.save();
+    const agent = await prisma.agent.update({
+      where: { id: req.params.agentId },
+      data: {
+        registrationStatus: 'suspended',
+        isActive: false,
+        status: 'offline',
+      },
+    });
 
     // Revoke all active session records for this suspended agent to instantly log them out
-    const Session = require('../models/Session');
-    await Session.updateMany({ userId: agent._id }, { $set: { isActive: false } });
+    await prisma.session.updateMany({ where: { userId: agent.id }, data: { isActive: false } });
 
     res.json({
       message: 'Agent account suspended successfully and all active sessions revoked.',
-      agent,
+      agent: stripSensitive(agent),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1073,18 +1122,22 @@ const getAllPayments = async (req, res) => {
     const query = {};
     if (status && status !== 'all') query.status = status;
 
-    const payments = await Payment.find(query)
-      .populate('customer', 'firstName lastName email phone')
-      .populate('booking', 'bookingId serviceType status')
-      .populate('invoice', 'invoiceNumber total')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const payments = await prisma.payment.findMany({
+      where: query,
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        booking: { select: { id: true, bookingId: true, serviceType: true, status: true } },
+        invoice: { select: { id: true, invoiceNumber: true, total: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit * 1,
+      skip: (page - 1) * limit,
+    });
 
-    const total = await Payment.countDocuments(query);
+    const total = await prisma.payment.count({ where: query });
 
     res.json({
-      payments,
+      payments: stripSensitive(payments),
       totalPages: Math.ceil(total / limit),
       currentPage: Number(page),
       total,
@@ -1098,26 +1151,31 @@ const getAllPayments = async (req, res) => {
 const processRefund = async (req, res) => {
   try {
     const { id } = req.params;
-    const payment = await Payment.findById(id).populate('customer', 'firstName lastName email');
+    const payment = await prisma.payment.findUnique({
+      where: { id },
+      include: { customer: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
     if (payment.status === 'refunded') return res.status(400).json({ error: 'Payment already refunded' });
 
-    payment.status = 'refunded';
-    payment.refundStatus = 'completed';
-    await payment.save();
+    const updatedPayment = await prisma.payment.update({
+      where: { id },
+      data: { status: 'refunded', refundStatus: 'completed' },
+      include: { customer: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
 
     // Send notification to customer
     try {
       await createNotification({
-        recipient: payment.customer._id,
+        recipient: updatedPayment.customer._id,
         recipientModel: 'Customer',
         type: 'payment_confirmation',
         title: 'Refund Processed',
-        message: `Your refund of ₹${payment.amount} (Txn: ${payment.transactionId}) has been processed successfully.`,
+        message: `Your refund of ₹${updatedPayment.amount} (Txn: ${updatedPayment.transactionId}) has been processed successfully.`,
       });
     } catch (e) { /* notification is best-effort */ }
 
-    res.json({ message: 'Refund processed successfully', payment });
+    res.json({ message: 'Refund processed successfully', payment: stripSensitive(updatedPayment) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1135,16 +1193,20 @@ const getAllComplaints = async (req, res) => {
     if (status && status !== 'all') query.status = status;
     if (priority && priority !== 'all') query.priority = priority;
 
-    const tickets = await SupportTicket.find(query)
-      .populate('customer', 'firstName lastName email phone profileImage')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const tickets = await prisma.supportTicket.findMany({
+      where: query,
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit * 1,
+      skip: (page - 1) * limit,
+    });
 
-    const total = await SupportTicket.countDocuments(query);
+    const total = await prisma.supportTicket.count({ where: query });
 
     res.json({
-      tickets,
+      tickets: stripSensitive(tickets),
       totalPages: Math.ceil(total / limit),
       currentPage: Number(page),
       total,
@@ -1161,22 +1223,28 @@ const replyToComplaint = async (req, res) => {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'Reply text is required' });
 
-    const ticket = await SupportTicket.findById(id).populate('customer', 'firstName lastName email');
+    const ticket = await prisma.supportTicket.findUnique({
+      where: { id },
+      include: { customer: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
     if (!ticket) return res.status(404).json({ error: 'Support ticket not found' });
 
-    ticket.messages.push({
+    const messages = Array.isArray(ticket.messages) ? [...ticket.messages] : [];
+    messages.push({
       sender: 'admin',
       text: text.trim(),
       timestamp: new Date(),
     });
 
-    if (ticket.status === 'open') {
-      ticket.status = 'in_progress';
-    }
+    const nextStatus = ticket.status === 'open' ? 'in_progress' : ticket.status;
 
-    await ticket.save();
+    const updatedTicket = await prisma.supportTicket.update({
+      where: { id },
+      data: { messages, status: nextStatus },
+      include: { customer: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
 
-    res.json({ message: 'Reply sent successfully', ticket });
+    res.json({ message: 'Reply sent successfully', ticket: stripSensitive(updatedTicket) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1191,13 +1259,15 @@ const updateComplaintStatus = async (req, res) => {
       return res.status(400).json({ error: 'Invalid status value' });
     }
 
-    const ticket = await SupportTicket.findById(id);
-    if (!ticket) return res.status(404).json({ error: 'Support ticket not found' });
+    const existingTicket = await prisma.supportTicket.findUnique({ where: { id } });
+    if (!existingTicket) return res.status(404).json({ error: 'Support ticket not found' });
 
-    ticket.status = status;
-    await ticket.save();
+    const ticket = await prisma.supportTicket.update({
+      where: { id },
+      data: { status },
+    });
 
-    res.json({ message: `Ticket status updated to ${status}`, ticket });
+    res.json({ message: `Ticket status updated to ${status}`, ticket: stripSensitive(ticket) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1211,15 +1281,17 @@ const updateComplaintStatus = async (req, res) => {
 const suspendCustomer = async (req, res) => {
   try {
     const { id } = req.params;
-    const customer = await Customer.findById(id);
+    const customer = await prisma.customer.findUnique({ where: { id } });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    customer.isActive = !customer.isActive;
-    await customer.save();
+    const updatedCustomer = await prisma.customer.update({
+      where: { id },
+      data: { isActive: !customer.isActive },
+    });
 
     res.json({
-      message: customer.isActive ? 'Customer account reactivated' : 'Customer account suspended',
-      customer,
+      message: updatedCustomer.isActive ? 'Customer account reactivated' : 'Customer account suspended',
+      customer: stripSensitive(updatedCustomer),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1239,11 +1311,11 @@ const broadcastNotification = async (req, res) => {
     let recipients = [];
 
     if (audience === 'customers' || audience === 'all') {
-      const customers = await Customer.find({ isActive: true }).select('_id');
+      const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { id: true } });
       recipients.push(...customers.map(c => ({ id: c._id, model: 'Customer' })));
     }
     if (audience === 'agents' || audience === 'all') {
-      const agents = await Agent.find({ registrationStatus: 'active' }).select('_id');
+      const agents = await prisma.agent.findMany({ where: { registrationStatus: 'active' }, select: { id: true } });
       recipients.push(...agents.map(a => ({ id: a._id, model: 'Agent' })));
     }
 

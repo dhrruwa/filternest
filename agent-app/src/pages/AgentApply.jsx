@@ -180,9 +180,7 @@ const AgentApply = () => {
     if (formData.address.pincode.replace(/\D/g, '').length !== 6) {
       nextErrors['address.pincode'] = 'Pincode must be exactly 6 digits';
     }
-    if (!formData.profileImage) {
-      nextErrors.profileImage = 'Profile avatar photo is mandatory';
-    }
+    // Profile avatar photo is optional.
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -252,7 +250,7 @@ const AgentApply = () => {
                   {/* Avatar Uploader */}
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-secondary uppercase tracking-wider pl-1 flex items-center gap-1">
-                      <FiCamera className="text-primary" /> Profile Photo *
+                      <FiCamera className="text-primary" /> Profile Photo <span className="text-slate-400 font-normal">(optional)</span>
                     </label>
 
                     <div 

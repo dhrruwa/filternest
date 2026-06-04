@@ -1,0 +1,472 @@
+// Prisma schema for FilterNest — migrated from MongoDB/Mongoose to PostgreSQL (Supabase)
+// Embedded Mongo documents -> Json columns. Scalar arrays -> String[].
+// Polymorphic refs (recipient/userId with *Model discriminator) -> plain columns (no relation).
+// Real foreign keys only where controllers use .populate().
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =====================================================================
+// USERS
+// =====================================================================
+
+model Customer {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String   @unique
+  phone     String   @unique
+  password  String
+
+  address      Json?
+  location     Json?
+  profileImage String?
+  alternatePhone String?
+  role         String  @default("customer")
+
+  verified              Boolean   @default(false)
+  verificationOTP       String?
+  verificationOTPExpire DateTime?
+  loginOTP              String?
+  loginOTPExpire        DateTime?
+  otpAttempts           Int       @default(0)
+  verificationToken       String?
+  verificationTokenExpire DateTime?
+  resetPasswordToken       String?
+  resetPasswordTokenExpire DateTime?
+
+  isActive         Boolean   @default(true)
+  lastLogin        DateTime?
+  twoFactorEnabled Boolean   @default(false)
+  biometrics       Json?
+  preferences      Json?
+  purifierDetails  Json?
+  membershipStatus String    @default("premium")
+  preferredServiceTimings Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings             Booking[]
+  invoices             Invoice[]
+  payments             Payment[]
+  maintenanceSchedules MaintenanceSchedule[]
+  supportTickets       SupportTicket[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+model Agent {
+  id        String  @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String  @unique
+  phone     String  @unique
+  password  String?
+  agentId   String  @unique
+
+  address      Json?
+  serviceArea  Json?
+  profileImage String? @default("")
+  certifications String[]
+  skills       Json?
+
+  rating        Float @default(0)
+  totalRatings  Int   @default(0)
+  completedJobs Int   @default(0)
+  role          String @default("agent")
+  status        String @default("offline")
+
+  currentLocation Json?
+
+  isVerified            Boolean   @default(false)
+  verificationOTP       String?
+  verificationOTPExpire DateTime?
+  loginOTP              String?
+  loginOTPExpire        DateTime?
+  otpAttempts           Int       @default(0)
+  resetPasswordToken       String?
+  resetPasswordTokenExpire DateTime?
+  lastLogin             DateTime?
+  isActive              Boolean   @default(true)
+
+  bankDetails Json?
+  documents   Json?
+  biometrics  Json?
+
+  isApproved          Boolean   @default(false)
+  approvalDate        DateTime?
+  approvedBy          String?
+  registrationStatus  String    @default("pending")
+  temporaryPasscodeSent Boolean @default(false)
+  rejectedReason      String    @default("")
+  profileCompletion   Int       @default(0)
+  accountActivatedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedBookings Booking[]
+  invoices         Invoice[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+model Admin {
+  id        String  @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String  @unique
+  password  String
+  phone     String?
+  profileImage String?
+  role      String  @default("admin")
+
+  loginOTP              String?
+  loginOTPExpire        DateTime?
+  verificationOTP       String?
+  verificationOTPExpire DateTime?
+  otpAttempts           Int       @default(0)
+  permissions           String[]
+  isActive              Boolean   @default(true)
+  lastLogin             DateTime?
+  biometrics            Json?
+  loginHistory          Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([phone])
+}
+
+// =====================================================================
+// CORE DOMAIN
+// =====================================================================
+
+model Service {
+  id            String @id @default(cuid())
+  name          String
+  serviceType   String
+  description   String?
+  basePrice     Float
+  estimatedDuration Int
+  partsRequired Json?
+  tools         String[]
+  precautions   String[]
+  steps         String[]
+  image         String?
+  isActive      Boolean  @default(true)
+  tags          String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Booking {
+  id        String @id @default(cuid())
+  bookingId String @unique
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  serviceType       String
+  bookingDate       DateTime
+  preferredTimeSlot Json?
+  serviceLocation   Json?
+  status            String @default("pending")
+
+  assignedAgentId String?
+  assignedAgent   Agent?  @relation(fields: [assignedAgentId], references: [id])
+
+  description       String?
+  priority          String   @default("medium")
+  estimatedDuration Int?
+  actualDuration    Int?
+  cost              Json?
+  paymentStatus     String   @default("pending")
+  paymentMethod     String?
+  notes             String?
+  agentNotes        String?
+  photos            String[]
+
+  feedback           Json?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice              Invoice?
+  payments             Payment[]
+  maintenanceSchedules MaintenanceSchedule[]
+  notifications        Notification[]
+}
+
+model Invoice {
+  id            String @id @default(cuid())
+  invoiceNumber String @unique
+
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  agentId String?
+  agent   Agent?  @relation(fields: [agentId], references: [id])
+
+  issueDate     DateTime  @default(now())
+  dueDate       DateTime?
+  items         Json?
+  subtotal      Float?
+  tax           Float?
+  taxPercentage Float?
+  discount      Float     @default(0)
+  discountReason String?
+  total         Float?
+  paymentStatus String    @default("pending")
+  paymentMethod String?
+  paymentDate   DateTime?
+  paymentReference String?
+  notes         String?
+  pdfUrl        String?
+  email         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments Payment[]
+}
+
+model Payment {
+  id            String @id @default(cuid())
+  transactionId String @unique
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  amount        Float
+  method        String   @default("upi")
+  status        String   @default("completed")
+  refundStatus  String   @default("none")
+  paymentDate   DateTime @default(now())
+  paymentReference String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MaintenanceSchedule {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id])
+
+  scheduleType    String
+  lastServiceDate DateTime?
+  nextServiceDate DateTime
+  reminderSent    Boolean   @default(false)
+  reminderSentAt  DateTime?
+  status          String    @default("pending")
+  frequency       String?
+  reminderDaysBefore Int    @default(7)
+  notes           String?
+
+  relatedBookingId String?
+  relatedBooking   Booking? @relation(fields: [relatedBookingId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+}
+
+model SupportTicket {
+  id        String @id @default(cuid())
+  ticketId  String @unique
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  category    String  @default("technical")
+  priority    String  @default("medium")
+  subject     String
+  description String?
+  status      String  @default("open")
+  messages    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =====================================================================
+// NOTIFICATIONS  (recipient is polymorphic -> plain columns)
+// =====================================================================
+
+model Notification {
+  id             String @id @default(cuid())
+  recipient      String
+  recipientModel String
+
+  type    String
+  title   String?
+  message String
+
+  relatedBookingId String?
+  relatedBooking   Booking? @relation(fields: [relatedBookingId], references: [id])
+
+  relatedMaintenanceId String?
+  relatedMaintenance   MaintenanceSchedule? @relation(fields: [relatedMaintenanceId], references: [id])
+
+  channels   Json?
+  sentStatus Json?
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+  actionUrl  String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([recipient, recipientModel])
+}
+
+// =====================================================================
+// AUTH / SECURITY  (userId is polymorphic -> plain columns)
+// =====================================================================
+
+model Session {
+  id             String @id @default(cuid())
+  userId         String
+  userModel      String
+  refreshTokenId String?
+  os         String  @default("Unknown OS")
+  browser    String  @default("Unknown Browser")
+  deviceType String  @default("desktop")
+  deviceName String  @default("Unknown Device")
+  ipAddress  String  @default("127.0.0.1")
+  location   String  @default("Unknown Location")
+  lastActive DateTime @default(now())
+  isActive   Boolean  @default(true)
+  expiresAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isActive])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id        String @id @default(cuid())
+  userId    String
+  userModel String
+  token     String  @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isRevoked])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model LoginHistory {
+  id        String  @id @default(cuid())
+  userId    String?
+  userModel String?
+  email     String
+  os         String  @default("Unknown OS")
+  browser    String  @default("Unknown Browser")
+  deviceType String  @default("desktop")
+  ipAddress  String  @default("127.0.0.1")
+  location   String  @default("Unknown Location")
+  status     String
+  reason     String  @default("")
+  timestamp  DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email, timestamp])
+  @@index([userId, timestamp])
+}
+
+model DeviceTracking {
+  id                String @id @default(cuid())
+  userId            String
+  userModel         String
+  deviceFingerprint String
+  os         String  @default("Unknown OS")
+  browser    String  @default("Unknown Browser")
+  deviceType String  @default("desktop")
+  isTrusted  Boolean @default(true)
+  lastLogin  DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, deviceFingerprint])
+}
+
+model AadhaarVerification {
+  id           String  @id @default(cuid())
+  aadharNumber String  @unique
+  phone        String
+  otp          String?
+  clientId     String?
+  attempts     Int      @default(0)
+  isVerified   Boolean  @default(false)
+  expiresAt    DateTime
+  cooldownUntil DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+model EmailVerification {
+  id         String  @id @default(cuid())
+  email      String  @unique
+  token      String  @unique
+  isVerified Boolean @default(false)
+  expiresAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PasswordResetToken {
+  id        String  @id @default(cuid())
+  userId    String
+  userModel String
+  token     String  @unique
+  expiresAt DateTime
+  isUsed    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([userId, isUsed])
+  @@index([expiresAt])
+}

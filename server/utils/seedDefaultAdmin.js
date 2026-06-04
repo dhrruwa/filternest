@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const Admin = require('../models/Admin');
+const bcrypt = require('bcryptjs');
+const prisma = require('../lib/prisma');
 
 const seedDefaultAdmin = async () => {
   try {
@@ -7,7 +7,7 @@ const seedDefaultAdmin = async () => {
       {
         firstName: 'Dhruva',
         lastName: 'Admin',
-        email: 'dhruwa@gmail.com',
+        email: 'dhrruwa@gmail.com',
         phone: '+919999999999',
         password: '12345678',
         role: 'admin',
@@ -21,16 +21,29 @@ const seedDefaultAdmin = async () => {
         password: 'admin123',
         role: 'admin',
         isActive: true,
-      }
+      },
     ];
 
     for (const adminData of adminsToSeed) {
-      const existingAdmin = await Admin.findOne({ email: adminData.email });
+      const hashedPassword = await bcrypt.hash(adminData.password, 10);
+      const existingAdmin = await prisma.admin.findUnique({ where: { email: adminData.email } });
       if (existingAdmin) {
-        console.log(`✓ Admin already exists: ${adminData.email}`);
+        // Update existing admin with new password and data
+        await prisma.admin.update({
+          where: { id: existingAdmin.id },
+          data: {
+            firstName: adminData.firstName,
+            lastName: adminData.lastName,
+            password: hashedPassword,
+            phone: adminData.phone,
+            isActive: adminData.isActive,
+          },
+        });
+        console.log(`✓ Admin updated: ${adminData.email} (${adminData.password})`);
       } else {
-        const newAdmin = new Admin(adminData);
-        await newAdmin.save();
+        await prisma.admin.create({
+          data: { ...adminData, password: hashedPassword },
+        });
         console.log(`✓ Default admin account created successfully: ${adminData.email} (${adminData.password})`);
       }
     }

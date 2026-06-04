@@ -1,14 +1,14 @@
-const Agent = require('../models/Agent');
-const Booking = require('../models/Booking');
+const prisma = require('../lib/prisma');
+const { stripSensitive } = require('../lib/sanitize');
 
 // Get Agent Profile
 const getProfile = async (req, res) => {
   try {
-    const agent = await Agent.findById(req.userId);
+    const agent = await prisma.agent.findUnique({ where: { id: req.userId } });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    res.json(agent);
+    res.json(stripSensitive(agent));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -20,16 +20,16 @@ const updateStatus = async (req, res) => {
     console.log(`[DEBUG] updateStatus requested for user: ${req.userId}, role: ${req.userRole}, status: ${req.body.status}`);
     const { status } = req.body;
 
-    const agent = await Agent.findByIdAndUpdate(
-      req.userId,
-      { status },
-      { new: true }
-    );
-
-    if (!agent) {
+    const existing = await prisma.agent.findUnique({ where: { id: req.userId } });
+    if (!existing) {
       console.log(`[DEBUG] Agent not found for ID: ${req.userId}`);
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    const agent = await prisma.agent.update({
+      where: { id: req.userId },
+      data: { status },
+    });
 
     console.log(`[DEBUG] Agent updated successfully. New status: ${agent.status}`);
     res.json({
@@ -47,15 +47,16 @@ const updateLocation = async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
 
-    const agent = await Agent.findByIdAndUpdate(
-      req.userId,
-      {
-        'currentLocation.type': 'Point',
-        'currentLocation.coordinates': [longitude, latitude],
-        'currentLocation.updatedAt': new Date(),
+    const agent = await prisma.agent.update({
+      where: { id: req.userId },
+      data: {
+        currentLocation: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
+          updatedAt: new Date(),
+        },
       },
-      { new: true }
-    );
+    });
 
     res.json({
       message: 'Location updated successfully',
@@ -69,14 +70,20 @@ const updateLocation = async (req, res) => {
 // Get Assigned Bookings
 const getAssignedBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({
-      assignedAgent: req.userId,
-      status: { $ne: 'completed' },
-    })
-      .populate('customer', 'firstName lastName phone email address')
-      .sort({ bookingDate: 1 });
+    const bookings = await prisma.booking.findMany({
+      where: {
+        assignedAgentId: req.userId,
+        status: { not: 'completed' },
+      },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true, phone: true, email: true, address: true },
+        },
+      },
+      orderBy: { bookingDate: 'asc' },
+    });
 
-    res.json(bookings);
+    res.json(stripSensitive(bookings));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -85,14 +92,20 @@ const getAssignedBookings = async (req, res) => {
 // Get Completed Services
 const getCompletedServices = async (req, res) => {
   try {
-    const bookings = await Booking.find({
-      assignedAgent: req.userId,
-      status: 'completed',
-    })
-      .populate('customer', 'firstName lastName phone email address')
-      .sort({ completedAt: -1 });
+    const bookings = await prisma.booking.findMany({
+      where: {
+        assignedAgentId: req.userId,
+        status: 'completed',
+      },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true, phone: true, email: true, address: true },
+        },
+      },
+      orderBy: { completedAt: 'desc' },
+    });
 
-    res.json(bookings);
+    res.json(stripSensitive(bookings));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -103,20 +116,19 @@ const updateProfile = async (req, res) => {
   try {
     const { firstName, lastName, phone, address } = req.body;
 
-    const agent = await Agent.findByIdAndUpdate(
-      req.userId,
-      {
+    const agent = await prisma.agent.update({
+      where: { id: req.userId },
+      data: {
         firstName,
         lastName,
         phone,
         address,
       },
-      { new: true, runValidators: true }
-    );
+    });
 
     res.json({
       message: 'Profile updated successfully',
-      agent: agent.toJSON(),
+      agent: stripSensitive(agent),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -126,25 +138,35 @@ const updateProfile = async (req, res) => {
 // Get Agent Public Portfolio and Reviews
 const getAgentPortfolio = async (req, res) => {
   try {
-    const Agent = require('../models/Agent');
-    const Booking = require('../models/Booking');
-
-    const agent = await Agent.findById(req.params.agentId);
+    const agent = await prisma.agent.findUnique({ where: { id: req.params.agentId } });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
     // Find all completed bookings with feedback reviews for this agent
-    const reviews = await Booking.find({
-      assignedAgent: req.params.agentId,
-      status: 'completed',
-      'feedback.rating': { $exists: true },
-    })
-      .populate('customer', 'firstName lastName')
-      .sort({ 'feedback.submittedAt': -1 });
+    const completed = await prisma.booking.findMany({
+      where: {
+        assignedAgentId: req.params.agentId,
+        status: 'completed',
+        feedback: { not: null },
+      },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    const reviews = completed
+      .filter(r => r.feedback && r.feedback.rating !== undefined && r.feedback.rating !== null)
+      .sort((a, b) => {
+        const aDate = a.feedback && a.feedback.submittedAt ? new Date(a.feedback.submittedAt).getTime() : 0;
+        const bDate = b.feedback && b.feedback.submittedAt ? new Date(b.feedback.submittedAt).getTime() : 0;
+        return bDate - aDate;
+      });
 
     res.json({
-      agent: agent.toJSON(),
+      agent: stripSensitive(agent),
       reviews: reviews.map(r => ({
         bookingId: r.bookingId,
         serviceType: r.serviceType,

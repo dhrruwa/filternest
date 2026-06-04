@@ -1,20 +1,15 @@
-const Customer = require('../models/Customer');
-const Booking = require('../models/Booking');
-const Invoice = require('../models/Invoice');
-const Payment = require('../models/Payment');
-const Notification = require('../models/Notification');
-const SupportTicket = require('../models/SupportTicket');
-const MaintenanceSchedule = require('../models/MaintenanceSchedule');
+const prisma = require('../lib/prisma');
+const { stripSensitive } = require('../lib/sanitize');
 const { generateInvoicePDF } = require('../utils/invoicePdfGenerator');
 
 // 1. Get Customer Profile
 const getProfile = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.userId);
+    const customer = await prisma.customer.findUnique({ where: { id: req.userId } });
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
-    res.json(customer.toJSON());
+    res.json(stripSensitive(customer));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -25,9 +20,9 @@ const updateProfile = async (req, res) => {
   try {
     const { firstName, lastName, phone, address, preferences, alternatePhone, preferredServiceTimings } = req.body;
 
-    const customer = await Customer.findByIdAndUpdate(
-      req.userId,
-      {
+    const customer = await prisma.customer.update({
+      where: { id: req.userId },
+      data: {
         firstName,
         lastName,
         phone,
@@ -36,12 +31,11 @@ const updateProfile = async (req, res) => {
         alternatePhone,
         preferredServiceTimings,
       },
-      { new: true, runValidators: true }
-    );
+    });
 
     res.json({
       message: 'Profile updated successfully',
-      customer: customer.toJSON(),
+      customer: stripSensitive(customer),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -53,14 +47,15 @@ const updateLocation = async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
 
-    const customer = await Customer.findByIdAndUpdate(
-      req.userId,
-      {
-        'location.type': 'Point',
-        'location.coordinates': [longitude, latitude],
+    const customer = await prisma.customer.update({
+      where: { id: req.userId },
+      data: {
+        location: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
+        },
       },
-      { new: true }
-    );
+    });
 
     res.json({
       message: 'Location updated successfully',
@@ -77,10 +72,12 @@ const getDashboard = async (req, res) => {
     const customerId = req.userId;
 
     // Healing block: Auto-create missing invoices for completed bookings
-    const completedWithoutInvoice = await Booking.find({
-      customer: customerId,
-      status: 'completed',
-      $or: [{ invoice: { $exists: false } }, { invoice: null }]
+    const completedWithoutInvoice = await prisma.booking.findMany({
+      where: {
+        customerId: customerId,
+        status: 'completed',
+        invoice: null,
+      },
     });
 
     if (completedWithoutInvoice.length > 0) {
@@ -93,45 +90,44 @@ const getDashboard = async (req, res) => {
           totalCost: 236,
         };
 
-        const invoice = await Invoice.create({
-          invoiceNumber,
-          booking: booking._id,
-          customer: customerId,
-          agent: booking.assignedAgent || null,
-          issueDate: booking.completedAt || new Date(),
-          dueDate: new Date((booking.completedAt || new Date()).getTime() + 14 * 24 * 60 * 60 * 1000),
-          items: [
-            {
-              description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
-              quantity: 1,
-              unitPrice: cost.serviceFee || 200,
-              total: cost.serviceFee || 200,
-            }
-          ],
-          subtotal: cost.serviceFee || 200,
-          tax: cost.tax || 36,
-          taxPercentage: 18,
-          total: cost.totalCost || 236,
-          paymentStatus: booking.paymentStatus || 'pending',
-          paymentMethod: booking.paymentMethod || undefined,
-          paymentDate: booking.paymentStatus === 'completed' ? (booking.completedAt || new Date()) : undefined,
+        await prisma.invoice.create({
+          data: {
+            invoiceNumber,
+            bookingId: booking.id,
+            customerId: customerId,
+            agentId: booking.assignedAgentId || null,
+            issueDate: booking.completedAt || new Date(),
+            dueDate: new Date((booking.completedAt || new Date()).getTime() + 14 * 24 * 60 * 60 * 1000),
+            items: [
+              {
+                description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
+                quantity: 1,
+                unitPrice: cost.serviceFee || 200,
+                total: cost.serviceFee || 200,
+              }
+            ],
+            subtotal: cost.serviceFee || 200,
+            tax: cost.tax || 36,
+            taxPercentage: 18,
+            total: cost.totalCost || 236,
+            paymentStatus: booking.paymentStatus || 'pending',
+            paymentMethod: booking.paymentMethod || undefined,
+            paymentDate: booking.paymentStatus === 'completed' ? (booking.completedAt || new Date()) : undefined,
+          },
         });
-
-        booking.invoice = invoice._id;
-        await booking.save();
       }
     }
 
     // Fetch baseline models
     const [bookings, invoices, upcomingSchedules, unreadNotifications, activeTickets] = await Promise.all([
-      Booking.find({ customer: customerId }),
-      Invoice.find({ customer: customerId }),
-      MaintenanceSchedule.find({ customer: customerId, status: { $ne: 'completed' } }),
-      Notification.find({ recipient: customerId, isRead: false }),
-      SupportTicket.find({ customer: customerId, status: { $ne: 'closed' } }),
+      prisma.booking.findMany({ where: { customerId: customerId } }),
+      prisma.invoice.findMany({ where: { customerId: customerId } }),
+      prisma.maintenanceSchedule.findMany({ where: { customerId: customerId, status: { not: 'completed' } } }),
+      prisma.notification.findMany({ where: { recipient: customerId, isRead: false } }),
+      prisma.supportTicket.findMany({ where: { customerId: customerId, status: { not: 'closed' } } }),
     ]);
 
-    const customer = await Customer.findById(customerId);
+    const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
@@ -140,7 +136,7 @@ const getDashboard = async (req, res) => {
     const totalBookings = bookings.length;
     const activeBookings = bookings.filter(b => !['completed', 'cancelled'].includes(b.status));
     const completedBookings = bookings.filter(b => b.status === 'completed');
-    
+
     const pendingPaymentsAmount = invoices
       .filter(inv => inv.paymentStatus !== 'completed')
       .reduce((sum, inv) => sum + (inv.total || 0), 0);
@@ -166,11 +162,15 @@ const getDashboard = async (req, res) => {
     if (activeBookings.length > 0) {
       // Find one that is active or assigned
       const trackedBooking = activeBookings.find(b => ['assigned', 'agent_assigned', 'on_the_way', 'in_progress'].includes(b.status)) || activeBookings[0];
-      
+
       // Populate booking's assignedAgent
-      activeTracker = await Booking.findById(trackedBooking._id)
-        .populate('assignedAgent')
-        .populate('invoice');
+      activeTracker = await prisma.booking.findUnique({
+        where: { id: trackedBooking.id },
+        include: {
+          assignedAgent: true,
+          invoice: true,
+        },
+      });
     }
 
     res.json({
@@ -197,7 +197,7 @@ const getDashboard = async (req, res) => {
         nextMaintenanceDate,
       },
       upcomingService: upcomingSchedules[0] || null,
-      activeTracker,
+      activeTracker: stripSensitive(activeTracker),
       unreadNotificationCount: unreadNotifications.length,
       activeTicketsCount: activeTickets.length,
     });
@@ -215,12 +215,12 @@ const getBookings = async (req, res) => {
     const status = req.query.status;
     const search = req.query.search;
 
-    let query = { customer: customerId };
+    let query = { customerId: customerId };
 
     // Apply status filter
     if (status && status !== 'all') {
       if (status === 'active') {
-        query.status = { $nin: ['completed', 'cancelled'] };
+        query.status = { notIn: ['completed', 'cancelled'] };
       } else {
         query.status = status;
       }
@@ -228,19 +228,23 @@ const getBookings = async (req, res) => {
 
     // Apply search filter (service type)
     if (search) {
-      query.serviceType = { $regex: search, $options: 'i' };
+      query.serviceType = { contains: search, mode: 'insensitive' };
     }
 
-    const total = await Booking.countDocuments(query);
-    const bookings = await Booking.find(query)
-      .populate('assignedAgent')
-      .populate('invoice')
-      .sort({ bookingDate: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    const total = await prisma.booking.count({ where: query });
+    const bookings = await prisma.booking.findMany({
+      where: query,
+      include: {
+        assignedAgent: true,
+        invoice: true,
+      },
+      orderBy: { bookingDate: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
 
     res.json({
-      bookings,
+      bookings: stripSensitive(bookings),
       page,
       pages: Math.ceil(total / limit),
       total,
@@ -256,10 +260,12 @@ const getInvoices = async (req, res) => {
     const customerId = req.userId;
 
     // Healing block: Auto-create missing invoices for completed bookings
-    const completedWithoutInvoice = await Booking.find({
-      customer: customerId,
-      status: 'completed',
-      $or: [{ invoice: { $exists: false } }, { invoice: null }]
+    const completedWithoutInvoice = await prisma.booking.findMany({
+      where: {
+        customerId: customerId,
+        status: 'completed',
+        invoice: null,
+      },
     });
 
     if (completedWithoutInvoice.length > 0) {
@@ -272,42 +278,44 @@ const getInvoices = async (req, res) => {
           totalCost: 236,
         };
 
-        const invoice = await Invoice.create({
-          invoiceNumber,
-          booking: booking._id,
-          customer: customerId,
-          agent: booking.assignedAgent || null,
-          issueDate: booking.completedAt || new Date(),
-          dueDate: new Date((booking.completedAt || new Date()).getTime() + 14 * 24 * 60 * 60 * 1000),
-          items: [
-            {
-              description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
-              quantity: 1,
-              unitPrice: cost.serviceFee || 200,
-              total: cost.serviceFee || 200,
-            }
-          ],
-          subtotal: cost.serviceFee || 200,
-          tax: cost.tax || 36,
-          taxPercentage: 18,
-          total: cost.totalCost || 236,
-          paymentStatus: booking.paymentStatus || 'pending',
-          paymentMethod: booking.paymentMethod || undefined,
-          paymentDate: booking.paymentStatus === 'completed' ? (booking.completedAt || new Date()) : undefined,
+        await prisma.invoice.create({
+          data: {
+            invoiceNumber,
+            bookingId: booking.id,
+            customerId: customerId,
+            agentId: booking.assignedAgentId || null,
+            issueDate: booking.completedAt || new Date(),
+            dueDate: new Date((booking.completedAt || new Date()).getTime() + 14 * 24 * 60 * 60 * 1000),
+            items: [
+              {
+                description: `${booking.serviceType.replace(/_/g, ' ').toUpperCase()} service flat fee`,
+                quantity: 1,
+                unitPrice: cost.serviceFee || 200,
+                total: cost.serviceFee || 200,
+              }
+            ],
+            subtotal: cost.serviceFee || 200,
+            tax: cost.tax || 36,
+            taxPercentage: 18,
+            total: cost.totalCost || 236,
+            paymentStatus: booking.paymentStatus || 'pending',
+            paymentMethod: booking.paymentMethod || undefined,
+            paymentDate: booking.paymentStatus === 'completed' ? (booking.completedAt || new Date()) : undefined,
+          },
         });
-
-        booking.invoice = invoice._id;
-        await booking.save();
       }
     }
 
-    const invoices = await Invoice.find({ customer: customerId })
-      .populate({
-        path: 'booking',
-        populate: { path: 'assignedAgent' },
-      })
-      .sort({ issueDate: -1 });
-    res.json(invoices);
+    const invoices = await prisma.invoice.findMany({
+      where: { customerId: customerId },
+      include: {
+        booking: {
+          include: { assignedAgent: true },
+        },
+      },
+      orderBy: { issueDate: 'desc' },
+    });
+    res.json(stripSensitive(invoices));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -316,17 +324,21 @@ const getInvoices = async (req, res) => {
 // 7. Dynamic PDF Invoice Streaming
 const getInvoicePDF = async (req, res) => {
   try {
-    const invoice = await Invoice.findById(req.params.id)
-      .populate('customer')
-      .populate('agent')
-      .populate('booking');
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      include: {
+        customer: true,
+        agent: true,
+        booking: true,
+      },
+    });
 
     if (!invoice) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
     // Basic permission check (must be the billing customer)
-    if (invoice.customer._id.toString() !== req.userId) {
+    if (invoice.customer.id.toString() !== req.userId) {
       return res.status(403).json({ error: 'Access Denied' });
     }
 
@@ -343,11 +355,15 @@ const getInvoicePDF = async (req, res) => {
 // 8. Payments Log
 const getPayments = async (req, res) => {
   try {
-    const payments = await Payment.find({ customer: req.userId })
-      .populate('booking')
-      .populate('invoice')
-      .sort({ paymentDate: -1 });
-    res.json(payments);
+    const payments = await prisma.payment.findMany({
+      where: { customerId: req.userId },
+      include: {
+        booking: true,
+        invoice: true,
+      },
+      orderBy: { paymentDate: 'desc' },
+    });
+    res.json(stripSensitive(payments));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -359,12 +375,15 @@ const simulatePayment = async (req, res) => {
     const { invoiceId, method = 'upi' } = req.body;
     const customerId = req.userId;
 
-    const invoice = await Invoice.findById(invoiceId).populate('booking');
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { booking: true },
+    });
     if (!invoice) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    if (invoice.customer.toString() !== customerId) {
+    if (invoice.customerId.toString() !== customerId) {
       return res.status(403).json({ error: 'Unauthorized to pay for this invoice' });
     }
 
@@ -374,48 +393,60 @@ const simulatePayment = async (req, res) => {
 
     // 1. Create a Payment Document
     const transactionId = `FN-TXN-${Math.floor(100000 + Math.random() * 900000)}`;
-    const payment = await Payment.create({
-      transactionId,
-      customer: customerId,
-      booking: invoice.booking?._id,
-      invoice: invoice._id,
-      amount: invoice.total,
-      method,
-      status: 'completed',
-      paymentReference: `UPI-REF-${Math.floor(100000000000 + Math.random() * 900000000000)}`,
+    const payment = await prisma.payment.create({
+      data: {
+        transactionId,
+        customerId: customerId,
+        bookingId: invoice.booking?.id || null,
+        invoiceId: invoice.id,
+        amount: invoice.total,
+        method,
+        status: 'completed',
+        paymentReference: `UPI-REF-${Math.floor(100000000000 + Math.random() * 900000000000)}`,
+      },
     });
 
     // 2. Mark Invoice as completed
-    invoice.paymentStatus = 'completed';
-    invoice.paymentDate = new Date();
-    invoice.paymentReference = payment.paymentReference;
-    invoice.paymentMethod = method;
-    await invoice.save();
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        paymentStatus: 'completed',
+        paymentDate: new Date(),
+        paymentReference: payment.paymentReference,
+        paymentMethod: method,
+      },
+    });
 
     // 3. Mark booking payment status as completed
     if (invoice.booking) {
-      const booking = await Booking.findById(invoice.booking._id);
+      const booking = await prisma.booking.findUnique({ where: { id: invoice.booking.id } });
       if (booking) {
-        booking.paymentStatus = 'completed';
-        booking.paymentMethod = method;
-        await booking.save();
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: {
+            paymentStatus: 'completed',
+            paymentMethod: method,
+          },
+        });
       }
     }
 
     // 4. Create an in-app Alert Notification
-    await Notification.create({
-      recipient: customerId,
-      recipientModel: 'Customer',
-      type: 'payment_confirmation',
-      title: 'Payment Received Successfully',
-      message: `Your payment of INR ${invoice.total.toFixed(2)} for invoice ${invoice.invoiceNumber} was successfully processed.`,
-      channels: { inApp: true, email: true },
-      relatedBooking: invoice.booking?._id,
+    await prisma.notification.create({
+      data: {
+        recipient: customerId,
+        recipientModel: 'Customer',
+        type: 'payment_confirmation',
+        title: 'Payment Received Successfully',
+        message: `Your payment of INR ${invoice.total.toFixed(2)} for invoice ${invoice.invoiceNumber} was successfully processed.`,
+        channels: { inApp: true, email: true },
+        relatedBookingId: invoice.booking?.id || null,
+      },
     });
 
     res.json({
       message: 'Checkout completed successfully',
-      payment,
+      payment: stripSensitive(payment),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -425,8 +456,10 @@ const simulatePayment = async (req, res) => {
 // 10. Notifications List
 const getNotifications = async (req, res) => {
   try {
-    const list = await Notification.find({ recipient: req.userId })
-      .sort({ createdAt: -1 });
+    const list = await prisma.notification.findMany({
+      where: { recipient: req.userId },
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(list);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -436,14 +469,16 @@ const getNotifications = async (req, res) => {
 // 11. Toggle Notification Read
 const markNotificationRead = async (req, res) => {
   try {
-    const alert = await Notification.findOneAndUpdate(
-      { _id: req.params.id, recipient: req.userId },
-      { isRead: true, readAt: new Date() },
-      { new: true }
-    );
-    if (!alert) {
+    const existing = await prisma.notification.findFirst({
+      where: { id: req.params.id, recipient: req.userId },
+    });
+    if (!existing) {
       return res.status(404).json({ error: 'Notification not found' });
     }
+    const alert = await prisma.notification.update({
+      where: { id: existing.id },
+      data: { isRead: true, readAt: new Date() },
+    });
     res.json(alert);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -453,13 +488,13 @@ const markNotificationRead = async (req, res) => {
 // 12. Dismiss/Delete Notification
 const deleteNotification = async (req, res) => {
   try {
-    const alert = await Notification.findOneAndDelete({
-      _id: req.params.id,
-      recipient: req.userId,
+    const existing = await prisma.notification.findFirst({
+      where: { id: req.params.id, recipient: req.userId },
     });
-    if (!alert) {
+    if (!existing) {
       return res.status(404).json({ error: 'Notification not found' });
     }
+    await prisma.notification.delete({ where: { id: existing.id } });
     res.json({ message: 'Notification dismissed successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -469,8 +504,10 @@ const deleteNotification = async (req, res) => {
 // 13. Support Tickets Log
 const getSupportTickets = async (req, res) => {
   try {
-    const tickets = await SupportTicket.find({ customer: req.userId })
-      .sort({ createdAt: -1 });
+    const tickets = await prisma.supportTicket.findMany({
+      where: { customerId: req.userId },
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(tickets);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -483,24 +520,26 @@ const createSupportTicket = async (req, res) => {
     const { category, subject, description } = req.body;
     const ticketId = `FN-TKT-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    const ticket = await SupportTicket.create({
-      ticketId,
-      customer: req.userId,
-      category,
-      subject,
-      description,
-      messages: [
-        {
-          sender: 'customer',
-          text: description || subject,
-          timestamp: new Date(),
-        },
-        {
-          sender: 'system',
-          text: `Thank you for contacting FilterNest Support. Ticket ${ticketId} has been created and assigned to technical assistance. Our assistant chatbot or a live executive will respond shortly.`,
-          timestamp: new Date(),
-        },
-      ],
+    const ticket = await prisma.supportTicket.create({
+      data: {
+        ticketId,
+        customerId: req.userId,
+        category,
+        subject,
+        description,
+        messages: [
+          {
+            sender: 'customer',
+            text: description || subject,
+            timestamp: new Date(),
+          },
+          {
+            sender: 'system',
+            text: `Thank you for contacting FilterNest Support. Ticket ${ticketId} has been created and assigned to technical assistance. Our assistant chatbot or a live executive will respond shortly.`,
+            timestamp: new Date(),
+          },
+        ],
+      },
     });
 
     res.status(201).json(ticket);
@@ -513,9 +552,11 @@ const createSupportTicket = async (req, res) => {
 const addSupportTicketMessage = async (req, res) => {
   try {
     const { text } = req.body;
-    const ticket = await SupportTicket.findOne({
-      _id: req.params.id,
-      customer: req.userId,
+    const ticket = await prisma.supportTicket.findFirst({
+      where: {
+        id: req.params.id,
+        customerId: req.userId,
+      },
     });
 
     if (!ticket) {
@@ -527,13 +568,20 @@ const addSupportTicketMessage = async (req, res) => {
     }
 
     // Append customer's text
-    ticket.messages.push({
-      sender: 'customer',
-      text,
-      timestamp: new Date(),
-    });
+    const updatedMessages = [
+      ...(ticket.messages || []),
+      {
+        sender: 'customer',
+        text,
+        timestamp: new Date(),
+      },
+    ];
 
-    await ticket.save();
+    await prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: { messages: updatedMessages },
+    });
+    ticket.messages = updatedMessages;
 
     // Trigger standard simulated responses
     setTimeout(async () => {
@@ -546,14 +594,20 @@ const addSupportTicketMessage = async (req, res) => {
         botResponse = "We have received your input. A customer support supervisor has been tagged and will check your purifier warranty details within the hour.";
       }
 
-      const updatedTicket = await SupportTicket.findById(ticket._id);
+      const updatedTicket = await prisma.supportTicket.findUnique({ where: { id: ticket.id } });
       if (updatedTicket && updatedTicket.status !== 'closed') {
-        updatedTicket.messages.push({
-          sender: 'agent',
-          text: botResponse,
-          timestamp: new Date(),
+        const agentMessages = [
+          ...(updatedTicket.messages || []),
+          {
+            sender: 'agent',
+            text: botResponse,
+            timestamp: new Date(),
+          },
+        ];
+        await prisma.supportTicket.update({
+          where: { id: updatedTicket.id },
+          data: { messages: agentMessages },
         });
-        await updatedTicket.save();
       }
     }, 2000);
 
@@ -566,8 +620,10 @@ const addSupportTicketMessage = async (req, res) => {
 // 16. Maintenance Reminders List
 const getReminders = async (req, res) => {
   try {
-    const schedules = await MaintenanceSchedule.find({ customer: req.userId })
-      .sort({ nextServiceDate: 1 });
+    const schedules = await prisma.maintenanceSchedule.findMany({
+      where: { customerId: req.userId },
+      orderBy: { nextServiceDate: 'asc' },
+    });
     res.json(schedules);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -577,9 +633,11 @@ const getReminders = async (req, res) => {
 // 17. Snooze Reminder (adds 7 days)
 const snoozeReminder = async (req, res) => {
   try {
-    const schedule = await MaintenanceSchedule.findOne({
-      _id: req.params.id,
-      customer: req.userId,
+    const schedule = await prisma.maintenanceSchedule.findFirst({
+      where: {
+        id: req.params.id,
+        customerId: req.userId,
+      },
     });
 
     if (!schedule) {
@@ -589,14 +647,18 @@ const snoozeReminder = async (req, res) => {
     // Push next service date out by 7 days
     const currentDueDate = new Date(schedule.nextServiceDate);
     currentDueDate.setDate(currentDueDate.getDate() + 7);
-    
-    schedule.nextServiceDate = currentDueDate;
-    schedule.reminderSent = false; // Reset to allow reminder notifications later
-    await schedule.save();
+
+    const updatedSchedule = await prisma.maintenanceSchedule.update({
+      where: { id: schedule.id },
+      data: {
+        nextServiceDate: currentDueDate,
+        reminderSent: false, // Reset to allow reminder notifications later
+      },
+    });
 
     res.json({
       message: 'Snoozed maintenance successfully by 7 days',
-      schedule,
+      schedule: updatedSchedule,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -607,22 +669,28 @@ const snoozeReminder = async (req, res) => {
 const rescheduleReminder = async (req, res) => {
   try {
     const { customDate } = req.body;
-    const schedule = await MaintenanceSchedule.findOne({
-      _id: req.params.id,
-      customer: req.userId,
+    const schedule = await prisma.maintenanceSchedule.findFirst({
+      where: {
+        id: req.params.id,
+        customerId: req.userId,
+      },
     });
 
     if (!schedule) {
       return res.status(404).json({ error: 'Schedule reminder not found' });
     }
 
-    schedule.nextServiceDate = new Date(customDate);
-    schedule.reminderSent = false;
-    await schedule.save();
+    const updatedSchedule = await prisma.maintenanceSchedule.update({
+      where: { id: schedule.id },
+      data: {
+        nextServiceDate: new Date(customDate),
+        reminderSent: false,
+      },
+    });
 
     res.json({
       message: 'Rescheduled maintenance appointment successfully',
-      schedule,
+      schedule: updatedSchedule,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

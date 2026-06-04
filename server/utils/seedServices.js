@@ -1,6 +1,5 @@
-const mongoose = require('mongoose');
-const Service = require('../models/Service');
 require('dotenv').config();
+const prisma = require('../lib/prisma');
 
 const services = [
   {
@@ -112,15 +111,14 @@ const services = [
 
 const seedServices = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/water-filter-service');
-    
     // Clear existing services
-    await Service.deleteMany({});
-    
+    await prisma.service.deleteMany({});
+
     // Insert new services
-    const createdServices = await Service.insertMany(services);
-    console.log(`✅ ${createdServices.length} services seeded successfully!`);
-    
+    const result = await prisma.service.createMany({ data: services });
+    console.log(`✅ ${result.count} services seeded successfully!`);
+
+    await prisma.$disconnect();
     process.exit(0);
   } catch (error) {
     console.error('❌ Error seeding services:', error);
