@@ -6,7 +6,12 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
     "test": "jest --detectOpenHandles"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "keywords": [
     "water",

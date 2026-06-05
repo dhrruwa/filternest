@@ -42,8 +42,16 @@ app.use(cors({
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
-    const isAllowed = allowedOrigins.includes(origin);
-    
+    // Allow any Vercel deployment (the 3 frontends each get their own
+    // *.vercel.app domain, plus preview deployments), in addition to the list.
+    let isVercel = false;
+    try {
+      isVercel = origin ? new URL(origin).hostname.endsWith('.vercel.app') : false;
+    } catch (e) {
+      isVercel = false;
+    }
+    const isAllowed = allowedOrigins.includes(origin) || isVercel;
+
     if (!origin || isAllowed) {
       callback(null, true);
     } else {

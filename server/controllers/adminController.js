@@ -793,7 +793,8 @@ const uploadAvatar = (req, res) => {
         .jpeg({ quality: 80, progressive: true })
         .toFile(outputPath);
 
-      const avatarUrl = `http://localhost:5001/uploads/${filename}`;
+      const baseUrl = process.env.SERVER_URL || `${req.protocol}://${req.get('host')}`;
+      const avatarUrl = `${baseUrl}/uploads/${filename}`;
       res.json({ avatarUrl });
     } catch (error) {
       res.status(500).json({ error: 'Image optimization or save failed: ' + error.message });

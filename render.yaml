@@ -1,0 +1,40 @@
+# Render Blueprint for the FilterNest backend (Express + Prisma + Supabase)
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: filternest-api
+    runtime: node
+    plan: free
+    rootDir: server          # backend lives in the server/ subfolder
+    buildCommand: npm install # postinstall runs `prisma generate`
+    startCommand: npm start   # node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # --- set these as SECRETS in the Render dashboard (do NOT commit values) ---
+      - key: DATABASE_URL      # Supabase pooled URL (port 6543, ?pgbouncer=true)
+        sync: false
+      - key: DIRECT_URL        # Supabase direct URL (port 5432)
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRE
+        value: 7d
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: MSG91_AUTH_KEY
+        sync: false
+      - key: MSG91_TEMPLATE_ID
+        sync: false
+      - key: FRONTEND_URL      # e.g. https://filternest.vercel.app
+        sync: false

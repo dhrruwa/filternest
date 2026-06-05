@@ -154,6 +154,16 @@ const sendVerificationOTP = async (user, email) => {
     </div>
   `;
 
+  // Primary channel: SMS via MSG91 (works on hosts that block SMTP, e.g. Render).
+  if (user.phone) {
+    try {
+      await sendSMSOTP(user.phone, otp);
+    } catch (smsError) {
+      console.warn('⚠️ Verification OTP SMS could not be sent:', smsError.message);
+    }
+  }
+
+  // Secondary channel: email (best-effort; may be blocked in some environments).
   try {
     await sendEmail(email, 'Verify Your FilterNest Account', emailContent);
   } catch (emailError) {
@@ -183,7 +193,17 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
     </div>
   `;
   const roleName = userType === 'agent' ? 'Agent' : userType === 'admin' ? 'Admin' : 'Customer';
-  
+
+  // Primary channel: SMS via MSG91 (works on hosts that block SMTP, e.g. Render).
+  if (user.phone) {
+    try {
+      await sendSMSOTP(user.phone, otp);
+    } catch (smsError) {
+      console.warn('⚠️ Login OTP SMS could not be sent:', smsError.message);
+    }
+  }
+
+  // Secondary channel: email (best-effort; may be blocked in some environments).
   try {
     await sendEmail(email, `${roleName} Dynamic OTP Code - FilterNest Security`, emailContent);
   } catch (emailError) {
@@ -1214,8 +1234,10 @@ const uploadAgentAvatar = (req, res) => {
         .jpeg({ quality: 80, progressive: true })
         .toFile(outputPath);
 
-      const PORT = process.env.PORT || 5001;
-      const avatarUrl = `http://localhost:${PORT}/uploads/${filename}`;
+      // Build an absolute URL from the request host so it works in production
+      // (Render) as well as locally, instead of hardcoding localhost.
+      const baseUrl = process.env.SERVER_URL || `${req.protocol}://${req.get('host')}`;
+      const avatarUrl = `${baseUrl}/uploads/${filename}`;
       res.json({ avatarUrl });
     } catch (error) {
       console.error('Image optimization failed:', error);
