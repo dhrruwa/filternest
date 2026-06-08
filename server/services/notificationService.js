@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const prisma = require('../lib/prisma');
 const { sendEmail } = require('./emailService');
 
@@ -25,7 +26,7 @@ const createNotification = async (recipientId, recipientModel, type, message, ti
     });
     return notification;
   } catch (error) {
-    console.error('Error creating notification:', error);
+    logger.error('Error creating notification:', error);
     throw error;
   }
 };
@@ -66,7 +67,7 @@ const sendNotification = async (notification) => {
     });
     return updated;
   } catch (error) {
-    console.error('Error sending notification:', error);
+    logger.error('Error sending notification:', error);
     throw error;
   }
 };
@@ -90,7 +91,7 @@ const getNotifications = async (userId, userModel, unreadOnly = false) => {
 
     return notifications;
   } catch (error) {
-    console.error('Error fetching notifications:', error);
+    logger.error('Error fetching notifications:', error);
     throw error;
   }
 };
@@ -103,7 +104,7 @@ const markNotificationAsRead = async (notificationId) => {
     });
     return notification;
   } catch (error) {
-    console.error('Error marking notification as read:', error);
+    logger.error('Error marking notification as read:', error);
     throw error;
   }
 };

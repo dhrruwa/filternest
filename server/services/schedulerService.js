@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const cron = require('node-cron');
 const prisma = require('../lib/prisma');
 const { sendEmail, maintenanceReminderEmail } = require('./emailService');
@@ -5,7 +6,7 @@ const { sendEmail, maintenanceReminderEmail } = require('./emailService');
 // Run daily at 9 AM
 const startMaintenanceReminderScheduler = () => {
   cron.schedule('0 9 * * *', async () => {
-    console.log('Running maintenance reminder check...');
+    logger.info('Running maintenance reminder check...');
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -58,9 +59,9 @@ const startMaintenanceReminderScheduler = () => {
         });
       }
 
-      console.log(`Sent ${schedules.length} maintenance reminders`);
+      logger.info(`Sent ${schedules.length} maintenance reminders`);
     } catch (error) {
-      console.error('Error in maintenance reminder scheduler:', error);
+      logger.error('Error in maintenance reminder scheduler:', error);
     }
   });
 };
@@ -107,9 +108,9 @@ const createMaintenanceSchedules = async (bookingId) => {
       },
     });
 
-    console.log('Maintenance schedules created for booking:', bookingId);
+    logger.info('Maintenance schedules created for booking:', bookingId);
   } catch (error) {
-    console.error('Error creating maintenance schedules:', error);
+    logger.error('Error creating maintenance schedules:', error);
   }
 };
 

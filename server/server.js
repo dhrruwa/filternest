@@ -1,3 +1,4 @@
+const logger = require('./lib/logger');
 require('dotenv').config();
 const express = require('express');
 const prisma = require('./lib/prisma');
@@ -84,10 +85,10 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`[${req.method}] ${req.url} - ${res.statusCode} (${duration}ms)`);
+    logger.info(`[${req.method}] ${req.url} - ${res.statusCode} (${duration}ms)`);
   });
   if (process.env.NODE_ENV === 'development' && req.method !== 'GET' && req.body && Object.keys(req.body).length) {
-    console.log('[BODY]', JSON.stringify(redact(req.body)));
+    logger.info('[BODY]', JSON.stringify(redact(req.body)));
   }
   next();
 });
@@ -97,16 +98,16 @@ app.use((req, res, next) => {
 if (process.env.NODE_ENV !== 'test') {
   prisma.$connect()
     .then(async () => {
-      console.log('PostgreSQL (Supabase) connected via Prisma');
+      logger.info('PostgreSQL (Supabase) connected via Prisma');
       if (process.env.NODE_ENV === 'development') {
-        console.log('Database seeding active (development mode)...');
+        logger.info('Database seeding active (development mode)...');
         await seedDefaultAdmin();
         await seedTestCustomer();
       } else {
-        console.log('Database seeding bypassed (production/external environment)...');
+        logger.info('Database seeding bypassed (production/external environment)...');
       }
     })
-    .catch(err => console.error('Database connection error:', err));
+    .catch(err => logger.error('Database connection error:', err));
 }
 
 // Sanitize 5xx responses so internal details (stack traces, Prisma queries,
@@ -116,7 +117,7 @@ app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     if (res.statusCode >= 500 && body && typeof body === 'object' && 'error' in body) {
-      console.error(`[5xx] ${req.method} ${req.originalUrl} ->`, body.error);
+      logger.error(`[5xx] ${req.method} ${req.originalUrl} ->`, body.error);
       if (process.env.NODE_ENV === 'production') {
         return originalJson({ error: 'Internal server error. Please try again later.' });
       }
@@ -142,7 +143,7 @@ app.get('/api/health', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error(err.stack);
   res.status(500).json({ 
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -158,12 +159,12 @@ app.use((req, res) => {
 // (not when imported by tests, which use supertest against the exported app).
 if (process.env.NODE_ENV !== 'test') {
   startMaintenanceReminderScheduler();
-  console.log('Maintenance reminder scheduler started');
+  logger.info('Maintenance reminder scheduler started');
 
   const PORT = process.env.PORT || 5001;
   app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log('All services initialized successfully');
+    logger.info(`Server is running on port ${PORT}`);
+    logger.info('All services initialized successfully');
   });
 }
 

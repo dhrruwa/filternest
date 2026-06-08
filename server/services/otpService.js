@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
 
@@ -55,7 +56,7 @@ const sendSMSOtp = async (phone, otp, aadharNumber = '') => {
         },
       });
 
-      console.log(`
+      logger.info(`
 ✅ SMS Gateway Connected
 ✅ Production OTP Mode Enabled
 ✅ OTP delivered successfully to ${maskedPhone} (Twilio SMS Gateway)
@@ -63,7 +64,7 @@ const sendSMSOtp = async (phone, otp, aadharNumber = '') => {
 
       return { success: true, provider: 'twilio' };
     } catch (error) {
-      console.error(`[OTP ERROR] Twilio dispatch failed: ${error.response?.data?.message || error.message}`);
+      logger.error(`[OTP ERROR] Twilio dispatch failed: ${error.response?.data?.message || error.message}`);
       // Fallback allowed on Twilio error
     }
   }
@@ -92,7 +93,7 @@ const sendSMSOtp = async (phone, otp, aadharNumber = '') => {
         },
       });
 
-      console.log(`
+      logger.info(`
 ✅ SMS Gateway Connected
 ✅ Production OTP Mode Enabled
 ✅ OTP delivered successfully to ${maskedPhone} (MSG91 Gateway)
@@ -100,7 +101,7 @@ const sendSMSOtp = async (phone, otp, aadharNumber = '') => {
 
       return { success: true, provider: 'msg91' };
     } catch (error) {
-      console.error(`[OTP ERROR] MSG91 dispatch failed: ${error.response?.data || error.message}`);
+      logger.error(`[OTP ERROR] MSG91 dispatch failed: ${error.response?.data || error.message}`);
       // Fallback allowed on MSG91 error
     }
   }
@@ -142,7 +143,7 @@ const sendSMSOtp = async (phone, otp, aadharNumber = '') => {
 
     await transporter.sendMail(mailOptions);
 
-    console.log(`
+    logger.info(`
 ┌──────────────────────────────────────────────────────────┐
 │   🚨   [FILTERNEST Aadhaar VERIFICATION OTP BYPASS]      │
 ├──────────────────────────────────────────────────────────┤
@@ -161,9 +162,9 @@ const sendSMSOtp = async (phone, otp, aadharNumber = '') => {
 
     return { success: true, provider: 'nodemailer_fallback' };
   } catch (error) {
-    console.error(`[OTP FATAL] Nodemailer fallback delivery failed: ${error.message}`);
+    logger.error(`[OTP FATAL] Nodemailer fallback delivery failed: ${error.message}`);
     // If Nodemailer also fails, log it to console and allow offline validation for testing
-    console.log(`
+    logger.info(`
 ┌──────────────────────────────────────────────────────────┐
 │   ⚠️   [OTP GATEWAY OFFLINE - SYSTEM TERMINAL LOG]        │
 ├──────────────────────────────────────────────────────────┤

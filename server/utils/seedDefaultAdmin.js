@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 
@@ -16,7 +17,7 @@ const seedDefaultAdmin = async () => {
   const password = process.env.ADMIN_PASSWORD;
 
   if (!email || !password) {
-    console.warn('⚠️ ADMIN_EMAIL / ADMIN_PASSWORD not set — skipping default admin seeding.');
+    logger.warn('⚠️ ADMIN_EMAIL / ADMIN_PASSWORD not set — skipping default admin seeding.');
     return;
   }
 
@@ -38,15 +39,15 @@ const seedDefaultAdmin = async () => {
         where: { id: existingAdmin.id },
         data: { ...adminData, password: hashedPassword },
       });
-      console.log(`✓ Default admin updated: ${email}`);
+      logger.info(`✓ Default admin updated: ${email}`);
     } else {
       await prisma.admin.create({
         data: { ...adminData, password: hashedPassword },
       });
-      console.log(`✓ Default admin created: ${email}`);
+      logger.info(`✓ Default admin created: ${email}`);
     }
   } catch (error) {
-    console.error('Error seeding default admin:', error.message);
+    logger.error('Error seeding default admin:', error.message);
   }
 };
 

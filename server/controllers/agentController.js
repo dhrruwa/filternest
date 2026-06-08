@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const prisma = require('../lib/prisma');
 const { stripSensitive } = require('../lib/sanitize');
 
@@ -17,12 +18,12 @@ const getProfile = async (req, res) => {
 // Update Agent Status
 const updateStatus = async (req, res) => {
   try {
-    console.log(`[DEBUG] updateStatus requested for user: ${req.userId}, role: ${req.userRole}, status: ${req.body.status}`);
+    logger.info(`[DEBUG] updateStatus requested for user: ${req.userId}, role: ${req.userRole}, status: ${req.body.status}`);
     const { status } = req.body;
 
     const existing = await prisma.agent.findUnique({ where: { id: req.userId } });
     if (!existing) {
-      console.log(`[DEBUG] Agent not found for ID: ${req.userId}`);
+      logger.info(`[DEBUG] Agent not found for ID: ${req.userId}`);
       return res.status(404).json({ error: 'Agent not found' });
     }
 
@@ -31,13 +32,13 @@ const updateStatus = async (req, res) => {
       data: { status },
     });
 
-    console.log(`[DEBUG] Agent updated successfully. New status: ${agent.status}`);
+    logger.info(`[DEBUG] Agent updated successfully. New status: ${agent.status}`);
     res.json({
       message: 'Status updated successfully',
       status: agent.status,
     });
   } catch (error) {
-    console.error('[ERROR] updateStatus failed:', error.stack || error);
+    logger.error('[ERROR] updateStatus failed:', error.stack || error);
     res.status(500).json({ error: error.message });
   }
 };

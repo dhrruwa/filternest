@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 require('dotenv').config();
 const prisma = require('../lib/prisma');
 
@@ -116,12 +117,12 @@ const seedServices = async () => {
 
     // Insert new services
     const result = await prisma.service.createMany({ data: services });
-    console.log(`✅ ${result.count} services seeded successfully!`);
+    logger.info(`✅ ${result.count} services seeded successfully!`);
 
     await prisma.$disconnect();
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error seeding services:', error);
+    logger.error('❌ Error seeding services:', error);
     process.exit(1);
   }
 };

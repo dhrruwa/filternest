@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 
@@ -29,17 +30,17 @@ const seedTestCustomer = async () => {
     for (const customerData of customersToSeed) {
       const existingCustomer = await prisma.customer.findUnique({ where: { email: customerData.email } });
       if (existingCustomer) {
-        console.log(`✓ Customer already exists: ${customerData.email}`);
+        logger.info(`✓ Customer already exists: ${customerData.email}`);
       } else {
         const hashedPassword = await bcrypt.hash(customerData.password, 10);
         await prisma.customer.create({
           data: { ...customerData, password: hashedPassword },
         });
-        console.log(`✓ Default customer account created successfully: ${customerData.email} (${customerData.password})`);
+        logger.info(`✓ Default customer account created successfully: ${customerData.email} (${customerData.password})`);
       }
     }
   } catch (error) {
-    console.error('Error seeding test customer:', error.message);
+    logger.error('Error seeding test customer:', error.message);
   }
 };
 

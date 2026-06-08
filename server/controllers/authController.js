@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const prisma = require('../lib/prisma');
 const { stripSensitive } = require('../lib/sanitize');
 const bcrypt = require('bcryptjs');
@@ -135,7 +136,7 @@ const establishUserSession = async (user, userType, req, res, reason = 'successf
 
 const sendVerificationOTP = async (user, email) => {
   const otp = generateOTP();
-  console.log(`Verification OTP for ${email}: ${otp}`);
+  logger.info(`Verification OTP for ${email}: ${otp}`);
   user.verificationOTP = otp;
   user.verificationOTPExpire = getOTPExpiration();
   await prisma[user.role === 'agent' ? 'agent' : user.role === 'admin' ? 'admin' : 'customer'].update({
@@ -158,7 +159,7 @@ const sendVerificationOTP = async (user, email) => {
   // delays or blocks the response). Email is the primary OTP channel.
   if (user.phone) {
     Promise.resolve(sendSMSOTP(user.phone, otp)).catch((smsError) =>
-      console.warn('⚠️ Verification OTP SMS could not be sent:', smsError.message)
+      logger.warn('⚠️ Verification OTP SMS could not be sent:', smsError.message)
     );
   }
 
@@ -166,14 +167,14 @@ const sendVerificationOTP = async (user, email) => {
   try {
     await sendEmail(email, 'Verify Your FilterNest Account', emailContent);
   } catch (emailError) {
-    console.warn('⚠️ OTP email could not be sent, but OTP stored for manual verification:', emailError.message);
+    logger.warn('⚠️ OTP email could not be sent, but OTP stored for manual verification:', emailError.message);
     // Continue - don't fail registration just because email failed
   }
 };
 
 const sendLoginOTP = async (user, email, userType = 'customer') => {
   const otp = generateOTP();
-  console.log(`Login OTP for ${email}: ${otp}`);
+  logger.info(`Login OTP for ${email}: ${otp}`);
   user.loginOTP = otp;
   user.loginOTPExpire = getOTPExpiration();
   await prisma[userType === 'agent' ? 'agent' : userType === 'admin' ? 'admin' : 'customer'].update({
@@ -197,7 +198,7 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
   // delays or blocks the login response). Email is the primary OTP channel.
   if (user.phone) {
     Promise.resolve(sendSMSOTP(user.phone, otp)).catch((smsError) =>
-      console.warn('⚠️ Login OTP SMS could not be sent:', smsError.message)
+      logger.warn('⚠️ Login OTP SMS could not be sent:', smsError.message)
     );
   }
 
@@ -205,7 +206,7 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
   try {
     await sendEmail(email, `${roleName} Dynamic OTP Code - FilterNest Security`, emailContent);
   } catch (emailError) {
-    console.warn('⚠️ Login OTP email could not be sent:', emailError.message);
+    logger.warn('⚠️ Login OTP email could not be sent:', emailError.message);
     // Continue - OTP is still stored and can be used
   }
 };
@@ -261,15 +262,15 @@ const registerCustomer = async (req, res) => {
     }
 
     const customer = await prisma.customer.create({ data: customerData });
-    console.log('✅ Customer account created:', customer.id);
+    logger.info('✅ Customer account created:', customer.id);
 
     // Try to send OTP email in background (non-blocking)
     setImmediate(async () => {
       try {
         await sendVerificationOTP(customer, normalizedEmail);
-        console.log('✅ OTP email sent to:', normalizedEmail);
+        logger.info('✅ OTP email sent to:', normalizedEmail);
       } catch (emailError) {
-        console.warn('⚠️ OTP email skipped (non-critical):', emailError.message);
+        logger.warn('⚠️ OTP email skipped (non-critical):', emailError.message);
         // Email failure is not critical - account is created
       }
     });
@@ -282,7 +283,7 @@ const registerCustomer = async (req, res) => {
       requiresOTP: false, // Changed - no OTP requirement for now
     });
   } catch (error) {
-    console.error('❌ Registration error:', error);
+    logger.error('❌ Registration error:', error);
     res.status(500).json({ error: error.message || 'Registration failed. Please try again.' });
   }
 };
@@ -784,7 +785,7 @@ const verifyGoogleOAuth = async (req, res) => {
       lastName: family_name || '',
     });
   } catch (error) {
-    console.error('Google OAuth error:', error.message);
+    logger.error('Google OAuth error:', error.message);
     res.status(401).json({ error: 'Google authentication verification failed. Invalid ID Token.' });
   }
 };
@@ -1005,7 +1006,7 @@ const verifyBiometricsLogin = async (req, res) => {
     // Production security verifies public key cryptographic signature:
     // const verified = crypto.verify("sha256", Buffer.from(challenge), user.biometrics.publicKey, signature);
     // For demonstration/architecture integrity, we mock successful WebAuthn check
-    console.log(`🔐 [BIOMETRIC-VAULT] Validating signature from credentialId: ${credentialId}`);
+    logger.info(`🔐 [BIOMETRIC-VAULT] Validating signature from credentialId: ${credentialId}`);
 
     const { accessToken } = await establishUserSession(user, userType, req, res, 'Biometric enclave signature login');
 
@@ -1181,7 +1182,7 @@ const registerAgentApplication = async (req, res) => {
       agentId,
     });
   } catch (error) {
-    console.error('Agent apply error:', error);
+    logger.error('Agent apply error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -1238,7 +1239,7 @@ const uploadAgentAvatar = (req, res) => {
       const avatarUrl = `${baseUrl}/uploads/${filename}`;
       res.json({ avatarUrl });
     } catch (error) {
-      console.error('Image optimization failed:', error);
+      logger.error('Image optimization failed:', error);
       res.status(500).json({ error: 'Image optimization or save failed: ' + error.message });
     }
   });

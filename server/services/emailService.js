@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
 
@@ -30,13 +31,13 @@ const transporter = nodemailer.createTransport({
 if (!BREVO_API_KEY) {
   transporter.verify((error) => {
     if (error) {
-      console.log('⚠️ SMTP Verification Error:', error.code || error.message);
+      logger.info('⚠️ SMTP Verification Error:', error.code || error.message);
     } else {
-      console.log('✅ SMTP Server Ready');
+      logger.info('✅ SMTP Server Ready');
     }
   });
 } else {
-  console.log('✅ Email delivery via Brevo HTTP API');
+  logger.info('✅ Email delivery via Brevo HTTP API');
 }
 
 // =========================
@@ -71,10 +72,10 @@ const sendEmail = async (to, subject, html) => {
   if (BREVO_API_KEY) {
     try {
       await sendViaBrevo(to, subject, html);
-      console.log('✅ Email sent via Brevo to', to);
+      logger.info('✅ Email sent via Brevo to', to);
       return true;
     } catch (error) {
-      console.warn('⚠️ Brevo email failed (non-blocking):', error.response?.data?.message || error.message);
+      logger.warn('⚠️ Brevo email failed (non-blocking):', error.response?.data?.message || error.message);
       return false;
     }
   }
@@ -94,15 +95,15 @@ const sendEmail = async (to, subject, html) => {
 
     // Race between email and timeout
     const info = await Promise.race([emailPromise, timeoutPromise]);
-    console.log('✅ Email sent:', info.response);
+    logger.info('✅ Email sent:', info.response);
     return true;
 
   } catch (error) {
-    console.warn('⚠️ Email sending failed (non-blocking):', error.message);
+    logger.warn('⚠️ Email sending failed (non-blocking):', error.message);
     
     // Log more details in development
     if (process.env.NODE_ENV === 'development') {
-      console.warn('Email error details:', {
+      logger.warn('Email error details:', {
         to,
         subject,
         code: error.code,
@@ -113,7 +114,7 @@ const sendEmail = async (to, subject, html) => {
     // Don't throw - return false so email failure doesn't break registration
     // Send to background job queue if needed
     if (process.env.NODE_ENV === 'production') {
-      console.warn(`📧 Email queue: Failed to send OTP to ${to}. User can request OTP manually.`);
+      logger.warn(`📧 Email queue: Failed to send OTP to ${to}. User can request OTP manually.`);
     }
     return false;
   }

@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
 
@@ -41,7 +42,7 @@ const auth = async (req, res, next) => {
       // Update session activity asynchronously to avoid blocking the request
       prisma.session
         .update({ where: { id: req.sessionId }, data: { lastActive: new Date() } })
-        .catch((err) => console.error('Failed to update session activity:', err));
+        .catch((err) => logger.error('Failed to update session activity:', err));
 
       req.session = activeSession;
     } else {
@@ -59,7 +60,7 @@ const auth = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('Auth verification error:', error.message);
+    logger.error('Auth verification error:', error.message);
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Access token expired.', code: 'TOKEN_EXPIRED' });
     }

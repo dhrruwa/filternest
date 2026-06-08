@@ -1,3 +1,4 @@
+const logger = require('../lib/logger');
 const prisma = require('../lib/prisma');
 const bcrypt = require('bcryptjs');
 const { stripSensitive } = require('../lib/sanitize');
@@ -838,7 +839,7 @@ const sendAadhaarOTP = async (req, res) => {
     // 1. Real Surepass API flow if SUREPASS_API_TOKEN is configured in environment
     if (process.env.SUREPASS_API_TOKEN) {
       try {
-        console.log(`[SUREPASS] Dispatching real Aadhaar OTP request to Surepass endpoint for ${cleanAadhaar}`);
+        logger.info(`[SUREPASS] Dispatching real Aadhaar OTP request to Surepass endpoint for ${cleanAadhaar}`);
         const response = await axios.post(
           'https://api.surepass.io/api/v1/aadhaar-v2/generate-otp',
           { aadhaar_number: cleanAadhaar },
@@ -874,7 +875,7 @@ const sendAadhaarOTP = async (req, res) => {
             },
           });
 
-          console.log(`
+          logger.info(`
 ✅ SMS Gateway Connected (Surepass e-KYC)
 ✅ Production OTP Mode Enabled
 ✅ OTP delivered successfully to +91 XXXXXXX${cleanPhone.slice(-3)}
@@ -889,7 +890,7 @@ const sendAadhaarOTP = async (req, res) => {
           throw new Error(response.data?.message || 'Surepass server returned unsuccessful dispatch');
         }
       } catch (surepassError) {
-        console.error(`[SUREPASS ERROR] Generation failed: ${surepassError.response?.data?.message || surepassError.message}`);
+        logger.error(`[SUREPASS ERROR] Generation failed: ${surepassError.response?.data?.message || surepassError.message}`);
         return res.status(surepassError.response?.status || 500).json({
           error: `Surepass gateway failed: ${surepassError.response?.data?.message || surepassError.message}`
         });
@@ -969,7 +970,7 @@ const verifyAadhaarOTP = async (req, res) => {
     // 1. Real Surepass verification
     if (process.env.SUREPASS_API_TOKEN && verification.clientId && !verification.clientId.startsWith('sandbox_client_')) {
       try {
-        console.log(`[SUREPASS] Submitting OTP to Surepass for client_id: ${verification.clientId}`);
+        logger.info(`[SUREPASS] Submitting OTP to Surepass for client_id: ${verification.clientId}`);
         const response = await axios.post(
           'https://api.surepass.io/api/v1/aadhaar-v2/submit-otp',
           {
@@ -985,7 +986,7 @@ const verifyAadhaarOTP = async (req, res) => {
         );
 
         if (response.data && response.data.success && response.data.status_code === 200) {
-          console.log('[SUREPASS SUCCESS] e-KYC Verification successful!', response.data.data?.full_name);
+          logger.info('[SUREPASS SUCCESS] e-KYC Verification successful!', response.data.data?.full_name);
 
           await prisma.aadhaarVerification.update({
             where: { id: verification.id },
@@ -1001,7 +1002,7 @@ const verifyAadhaarOTP = async (req, res) => {
           throw new Error(response.data?.message || 'Surepass returned validation mismatch');
         }
       } catch (surepassError) {
-        console.error(`[SUREPASS ERROR] Verification failed: ${surepassError.response?.data?.message || surepassError.message}`);
+        logger.error(`[SUREPASS ERROR] Verification failed: ${surepassError.response?.data?.message || surepassError.message}`);
 
         const updatedVerification = await prisma.aadhaarVerification.update({
           where: { id: verification.id },
