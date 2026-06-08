@@ -154,16 +154,15 @@ const sendVerificationOTP = async (user, email) => {
     </div>
   `;
 
-  // Primary channel: SMS via MSG91 (works on hosts that block SMTP, e.g. Render).
+  // Best-effort SMS via MSG91 (fire-and-forget so a slow/failed SMS never
+  // delays or blocks the response). Email is the primary OTP channel.
   if (user.phone) {
-    try {
-      await sendSMSOTP(user.phone, otp);
-    } catch (smsError) {
-      console.warn('⚠️ Verification OTP SMS could not be sent:', smsError.message);
-    }
+    Promise.resolve(sendSMSOTP(user.phone, otp)).catch((smsError) =>
+      console.warn('⚠️ Verification OTP SMS could not be sent:', smsError.message)
+    );
   }
 
-  // Secondary channel: email (best-effort; may be blocked in some environments).
+  // Primary channel: email (delivered via Brevo in production).
   try {
     await sendEmail(email, 'Verify Your FilterNest Account', emailContent);
   } catch (emailError) {
@@ -194,16 +193,15 @@ const sendLoginOTP = async (user, email, userType = 'customer') => {
   `;
   const roleName = userType === 'agent' ? 'Agent' : userType === 'admin' ? 'Admin' : 'Customer';
 
-  // Primary channel: SMS via MSG91 (works on hosts that block SMTP, e.g. Render).
+  // Best-effort SMS via MSG91 (fire-and-forget so a slow/failed SMS never
+  // delays or blocks the login response). Email is the primary OTP channel.
   if (user.phone) {
-    try {
-      await sendSMSOTP(user.phone, otp);
-    } catch (smsError) {
-      console.warn('⚠️ Login OTP SMS could not be sent:', smsError.message);
-    }
+    Promise.resolve(sendSMSOTP(user.phone, otp)).catch((smsError) =>
+      console.warn('⚠️ Login OTP SMS could not be sent:', smsError.message)
+    );
   }
 
-  // Secondary channel: email (best-effort; may be blocked in some environments).
+  // Primary channel: email (delivered via Brevo in production).
   try {
     await sendEmail(email, `${roleName} Dynamic OTP Code - FilterNest Security`, emailContent);
   } catch (emailError) {

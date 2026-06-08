@@ -1,7 +1,11 @@
 const nodemailer = require('nodemailer');
+const axios = require('axios');
+
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const SENDER_EMAIL = process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@filternest.app';
 
 // =========================
-// SMTP Configuration with timeout
+// SMTP Configuration with timeout (used locally / when Brevo is not configured)
 // =========================
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -21,19 +25,60 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Verify SMTP connection with timeout
-transporter.verify((error, success) => {
-  if (error) {
-    console.log('⚠️ SMTP Verification Error:', error.code || error.message);
-  } else {
-    console.log('✅ SMTP Server Ready');
-  }
-});
+// Only verify SMTP when we're actually going to use it (no Brevo key). On hosts
+// that block SMTP (e.g. Render) this avoids a noisy timeout error on boot.
+if (!BREVO_API_KEY) {
+  transporter.verify((error) => {
+    if (error) {
+      console.log('⚠️ SMTP Verification Error:', error.code || error.message);
+    } else {
+      console.log('✅ SMTP Server Ready');
+    }
+  });
+} else {
+  console.log('✅ Email delivery via Brevo HTTP API');
+}
+
+// =========================
+// Brevo (HTTP API) sender — works on hosts that block outbound SMTP.
+// =========================
+const sendViaBrevo = async (to, subject, html) => {
+  await axios.post(
+    'https://api.brevo.com/v3/smtp/email',
+    {
+      sender: { name: 'FilterNest Service', email: SENDER_EMAIL },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    },
+    {
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      timeout: 8000,
+    }
+  );
+  return true;
+};
 
 // =========================
 // SEND EMAIL FUNCTION (Non-blocking with timeout)
 // =========================
 const sendEmail = async (to, subject, html) => {
+  // Prefer Brevo's HTTP API when configured (required on Render / SMTP-blocked hosts).
+  if (BREVO_API_KEY) {
+    try {
+      await sendViaBrevo(to, subject, html);
+      console.log('✅ Email sent via Brevo to', to);
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Brevo email failed (non-blocking):', error.response?.data?.message || error.message);
+      return false;
+    }
+  }
+
   // Create a timeout promise
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error('Email timeout - took too long')), 4000);
