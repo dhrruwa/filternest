@@ -5,6 +5,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Render's runtime is Debian/Ubuntu with OpenSSL 3.x. Explicitly build the
+  // query engine for those targets so TLS to Supabase works in production
+  // (fixes P1011 "Error opening a TLS connection: OpenSSL error").
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
