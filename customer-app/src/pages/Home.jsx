@@ -128,11 +128,15 @@ const Home = () => {
 
       {/* Hero Section */}
       <section className="relative -mt-[72px] min-h-[650px] sm:min-h-[750px] lg:min-h-[850px] flex items-center overflow-hidden px-margin-mobile md:px-margin-desktop pt-[136px] sm:pt-[152px] lg:pt-[168px] pb-16 sm:pb-20 lg:pb-24">
-        {/* Background Image and Ambient Blending */}
+        {/* Background Video (looping) and Ambient Blending */}
         <div className="absolute inset-0 z-0">
-          <img 
-            src="/images/hero_kitchen_scene.png" 
-            alt="FilterNest Sanctuary Countertop" 
+          <video
+            src="/videos/hero.mp4"
+            poster="/images/hero_kitchen_scene.png"
+            autoPlay
+            loop
+            muted
+            playsInline
             className="w-full h-full object-cover object-[center_right] lg:object-center"
           />
           {/* Linear gradient to ensure text readability on the left without obscuring the kitchen details */}
