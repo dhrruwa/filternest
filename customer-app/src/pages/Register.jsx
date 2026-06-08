@@ -116,10 +116,6 @@ const Register = () => {
 
               {!isOtpStep ? (
               <form onSubmit={handleSubmit} noValidate className="space-y-6">
-                 <div className="px-4 py-3 rounded-xl bg-surface-container-low border border-outline/40 text-on-surface-variant text-xs leading-relaxed font-semibold">
-                   Customer registration only. If you are a prospective service technician, please submit your onboarding request at the <Link to="/technician-application" className="text-primary font-bold hover:underline">Technician Application Portal</Link>.
-                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-label-md font-label-md text-on-surface mb-2">First Name</label>

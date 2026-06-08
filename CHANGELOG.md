@@ -4,6 +4,54 @@ This document records what was implemented and changed in the FilterNest platfor
 
 ---
 
+## Security Hardening & Production Fixes (2026-06-08)
+
+Hardened auth/security, fixed the Render↔Supabase database connection, and got the
+deployed apps working on every device. Several items here **supersede** the earlier
+"Production & Deploy Readiness" entry below (CORS wildcard and SMS-primary OTP).
+
+### Database connection on Render (the big production blocker)
+
+| Issue | Fix | Why |
+|------|-----|-----|
+| Prisma's Rust engine threw `P1011 — Error opening a TLS connection: OpenSSL error` against the Supabase pooler from Render; every query failed | Connect through the **`pg` Node driver via Prisma's driver adapter** (`@prisma/adapter-pg`) so **Node.js handles TLS** (`server/lib/prisma.js`) | The engine's TLS to the Supabase pooler fails on Render's OpenSSL; routing TLS through Node connects reliably. `sslmode`/`binaryTargets` did not resolve it. |
+| After the adapter: `self-signed certificate in certificate chain` | **Strip `sslmode` from the URL** and set `ssl: { rejectUnauthorized: false }` | Supabase's pooler cert isn't in Node's default CA bundle; `sslmode=require` in the URL was overriding the explicit ssl config. |
+| "Only one device could log in"; others got auth failures | **`app.set('trust proxy', 1)`** + raised `authRateLimiter` 10→50/15min | Without trusting Render's proxy, every request shared one `req.ip`, so the IP-keyed rate limiter used a single bucket for all users. |
+
+### Security hardening
+
+| Area | Before | After | Why |
+|------|--------|-------|-----|
+| **Default admin** | Hardcoded emails/phones/plaintext passwords in `seedDefaultAdmin.js` | Single admin from **`ADMIN_EMAIL`/`ADMIN_PASSWORD`** (+ optional name/phone), bcrypt-hashed, **never logged**, skips if unset | No credentials in source; rotatable via env. |
+| **JWT secrets** | Hardcoded fallback strings | **Throw at startup** if `JWT_SECRET`/`JWT_REFRESH_SECRET` unset; no fallback | A default secret lets anyone forge tokens. |
+| **CORS** | Any `*.vercel.app` (wildcard) | **Explicit allow-list** from `ALLOWED_ORIGINS` + `FRONTEND_URL`; no wildcard with `credentials:true` (`lib/allowedOrigins.js`) | Wildcard + credentials is unsafe; only our exact domains are allowed. **Supersedes the wildcard entry below.** |
+| **CSRF** | Computed a custom-header flag but never enforced it | Reject state-changing requests lacking the **`X-Requested-With`/CSRF header** or a present/allow-listed **Origin** | Makes the double-submit CSRF defense actually effective. |
+| **Token source** | Also accepted `?token=` in the query string | **Authorization header or HTTP-only cookie only** | Query tokens leak into logs, history, Referer. |
+| **Middleware order** | `xssClean`/`csrfCheck` ran before `express.json()` | Body parsers run **first** | `req.body` was undefined, so body sanitization never ran. |
+| **Logging** | Logged full `req.body` (passwords/OTPs) on every non-GET | **No body logging in prod**; redacted in dev | Stop leaking secrets to logs. |
+| **Leaked creds** | Default `admin123` in 6 docs + `start-all.sh` | Scrubbed | That account existed in the DB. |
+
+### Email OTP via Brevo
+
+| Before | After | Why |
+|--------|-------|-----|
+| OTP via Gmail **SMTP** (and MSG91 SMS primary) | **Email OTP via Brevo HTTP API** (`BREVO_API_KEY`), SMTP fallback locally; SMS now best-effort fire-and-forget (`emailService.js`, `authController.js`) | Render blocks outbound SMTP; MSG91 trial only delivered to the account owner's number. Brevo's HTTPS API (free, 300/day, no domain) delivers to all users. **Supersedes the SMS-primary entry below.** |
+
+### Frontend / UX
+
+- All 3 apps send `X-Requested-With` (incl. the token-refresh call) so CSRF passes.
+- **Admin panel port 6000 → 6001** (browsers block port 6000 as unsafe / `ERR_UNSAFE_PORT`).
+- Agent application: **profile avatar photo made optional** (was mandatory).
+- Customer registration: removed the "Customer registration only / Technician Application Portal" notice.
+- `VITE_API_URL` must be set on each Vercel project (build-time) to point at the Render API.
+
+### New environment variables
+
+`JWT_REFRESH_SECRET`, `ADMIN_EMAIL`/`ADMIN_PASSWORD` (+ optional `ADMIN_*`), `ALLOWED_ORIGINS`,
+`BREVO_API_KEY` — all documented in `server/.env.example` (placeholders only).
+
+---
+
 ## Production & Deploy Readiness (Render + Vercel)
 
 Made the backend and frontends deployable to managed hosting.
