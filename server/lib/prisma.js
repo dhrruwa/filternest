@@ -48,8 +48,22 @@ for (const model of MODELS) {
   result[model] = idAlias;
 }
 
-const connectionString = process.env.DATABASE_URL;
-const isLocal = /localhost|127\.0\.0\.1/.test(connectionString || '');
+const rawConnectionString = process.env.DATABASE_URL || '';
+const isLocal = /localhost|127\.0\.0\.1/.test(rawConnectionString);
+
+// Strip any `sslmode` from the URL so it can't override the explicit `ssl`
+// config below. (sslmode=require forces strict cert verification, which fails
+// against Supabase's pooler cert with "self-signed certificate in chain".)
+const stripSslmode = (url) => {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete('sslmode');
+    return u.toString();
+  } catch (e) {
+    return url;
+  }
+};
+const connectionString = stripSslmode(rawConnectionString);
 
 // Supabase requires TLS; its pooler cert isn't in the default Node CA bundle,
 // so accept it without strict CA verification (still encrypted).
