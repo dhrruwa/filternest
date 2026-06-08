@@ -1,12 +1,17 @@
 // Shared Prisma client for the whole server.
 //
+// Connection goes through the `pg` Node driver via Prisma's driver adapter so
+// TLS is handled by Node.js (not the Rust query engine). This fixes the
+// P1011 "Error opening a TLS connection: OpenSSL error" that the engine throws
+// when connecting to the Supabase pooler from some hosts (e.g. Render).
+//
 // The frontends (and a lot of existing controller code) expect Mongo-style
 // `_id` on every returned document. Prisma's primary key is `id`, so we use a
 // result extension to expose a computed `_id` (equal to `id`) on EVERY model —
-// including nested/included relations. This keeps API responses drop-in
-// compatible with the old Mongoose output without touching the frontends.
+// including nested/included relations.
 
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 
 // Every model name (camelCase, as used on the Prisma client) gets an `_id`.
 const MODELS = [
@@ -43,7 +48,18 @@ for (const model of MODELS) {
   result[model] = idAlias;
 }
 
+const connectionString = process.env.DATABASE_URL;
+const isLocal = /localhost|127\.0\.0\.1/.test(connectionString || '');
+
+// Supabase requires TLS; its pooler cert isn't in the default Node CA bundle,
+// so accept it without strict CA verification (still encrypted).
+const adapter = new PrismaPg({
+  connectionString,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
+});
+
 const base = new PrismaClient({
+  adapter,
   log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
 });
 
