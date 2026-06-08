@@ -7,7 +7,9 @@ const { isAllowedOrigin } = require('../lib/allowedOrigins');
  */
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
+  // A single OTP login is 2 requests (request-otp + verify-otp), and users
+  // legitimately retry. 50/15min per IP still blocks brute force.
+  max: 50,
   message: {
     error: 'Too many authentication attempts from this IP. Please try again after 15 minutes.',
   },

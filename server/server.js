@@ -14,6 +14,11 @@ const path = require('path');
 
 const app = express();
 
+// Trust the first proxy hop (Render's load balancer) so req.ip reflects the
+// real client IP. Without this, rate limiters key on the proxy's single IP and
+// every user/device shares one bucket -> "only one device can log in".
+app.set('trust proxy', 1);
+
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
