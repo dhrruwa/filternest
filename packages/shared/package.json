@@ -1,0 +1,19 @@
+{
+  "name": "@filternest/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./api": "./src/api.js"
+  },
+  "peerDependencies": {
+    "axios": "*",
+    "react": "*",
+    "framer-motion": "*",
+    "react-icons": "*",
+    "react-hot-toast": "*"
+  }
+}

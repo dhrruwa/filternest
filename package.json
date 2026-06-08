@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "description": "Water Filter Service Management System - Full Stack Application",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "customer-app",
+    "agent-app",
+    "admin-panel"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:customer\" \"npm run dev:agent\" \"npm run dev:admin\"",
     "dev:server": "cd server && npm run dev",
