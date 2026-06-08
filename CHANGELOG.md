@@ -4,6 +4,19 @@ This document records what was implemented and changed in the FilterNest platfor
 
 ---
 
+## Code Quality: error handling, tests, CI, dead-code removal (2026-06-08)
+
+| Area | Before | After | Why |
+|------|--------|-------|-----|
+| **Error responses** | `res.status(500).json({ error: error.message })` leaked stack traces / Prisma queries / file paths to the client (74 sites) | One central middleware **sanitizes all 5xx bodies** to a generic message in production and logs full detail server-side (`server.js`) | Information disclosure — clients should never see internals. |
+| **Tests** | `jest` listed but **0 tests** | **16 Jest tests** (Prisma/email/SMS mocked): origin allow-list, JWT round-trip, CSRF enforcement, health, 404, auth 400/401 (`server/__tests__/`) | An auth app with no tests is the biggest review red flag. |
+| **CI** | None | **GitHub Actions** runs backend tests + builds all 3 frontends on every push/PR (`.github/workflows/ci.yml`) | Catch regressions automatically. |
+| **Dead code/deps** | `mongoose` + 17 unused `models/*.js`, unused `redis`/`stripe`/`qrcode`, root scratch scripts, legacy `client/` | All removed | Post-migration cleanup; smaller install, no confusion. |
+| **Simulated data** | Hardcoded `location: 'Mumbai, India'` in login history | `'Unknown'` until a geo provider is wired | Don't present fake data as real. |
+| **Testability** | `server.js` always listened/connected on import | Exports `app`; skips listen/DB/scheduler under `NODE_ENV=test` | Enables supertest integration tests. |
+
+---
+
 ## Security Hardening & Production Fixes (2026-06-08)
 
 Hardened auth/security, fixed the Render↔Supabase database connection, and got the

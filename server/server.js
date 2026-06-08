@@ -92,19 +92,39 @@ app.use((req, res, next) => {
   next();
 });
 
-// Database connection (Supabase PostgreSQL via Prisma)
-prisma.$connect()
-  .then(async () => {
-    console.log('PostgreSQL (Supabase) connected via Prisma');
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Database seeding active (development mode)...');
-      await seedDefaultAdmin();
-      await seedTestCustomer();
-    } else {
-      console.log('Database seeding bypassed (production/external environment)...');
+// Database connection (Supabase PostgreSQL via Prisma).
+// Skipped under test, where Prisma is mocked and no real DB is used.
+if (process.env.NODE_ENV !== 'test') {
+  prisma.$connect()
+    .then(async () => {
+      console.log('PostgreSQL (Supabase) connected via Prisma');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Database seeding active (development mode)...');
+        await seedDefaultAdmin();
+        await seedTestCustomer();
+      } else {
+        console.log('Database seeding bypassed (production/external environment)...');
+      }
+    })
+    .catch(err => console.error('Database connection error:', err));
+}
+
+// Sanitize 5xx responses so internal details (stack traces, Prisma queries,
+// file paths) never reach the client. Full detail is logged server-side.
+// Patches res.json before routes run, so it covers every controller.
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 500 && body && typeof body === 'object' && 'error' in body) {
+      console.error(`[5xx] ${req.method} ${req.originalUrl} ->`, body.error);
+      if (process.env.NODE_ENV === 'production') {
+        return originalJson({ error: 'Internal server error. Please try again later.' });
+      }
     }
-  })
-  .catch(err => console.error('Database connection error:', err));
+    return originalJson(body);
+  };
+  next();
+});
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
@@ -134,12 +154,17 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Start maintenance reminder scheduler
-startMaintenanceReminderScheduler();
-console.log('Maintenance reminder scheduler started');
+// Start the scheduler and HTTP listener only when run as the main process
+// (not when imported by tests, which use supertest against the exported app).
+if (process.env.NODE_ENV !== 'test') {
+  startMaintenanceReminderScheduler();
+  console.log('Maintenance reminder scheduler started');
 
-const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log('All services initialized successfully');
-});
+  const PORT = process.env.PORT || 5001;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log('All services initialized successfully');
+  });
+}
+
+module.exports = app;

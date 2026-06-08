@@ -86,7 +86,7 @@ const establishUserSession = async (user, userType, req, res, reason = 'successf
       browser: clientInfo.browser,
       deviceType: clientInfo.deviceType,
       ipAddress: req.ip || '127.0.0.1',
-      location: 'Mumbai, India', // Simulated geolocation mapping
+      location: 'Unknown', // No geolocation provider wired up yet
       status: isNewDevice ? 'suspicious' : 'success',
       reason: isNewDevice ? 'new device login' : reason,
     },
@@ -115,7 +115,7 @@ const establishUserSession = async (user, userType, req, res, reason = 'successf
       deviceType: clientInfo.deviceType,
       deviceName: clientInfo.deviceName,
       ipAddress: req.ip || '127.0.0.1',
-      location: 'Mumbai, India',
+      location: 'Unknown',
       expiresAt: refreshExpires,
     },
   });

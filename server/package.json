@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "build": "prisma generate",
     "postinstall": "prisma generate",
-    "test": "jest --detectOpenHandles"
+    "test": "jest"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -34,21 +34,18 @@
     "express-validator": "^7.0.0",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.0",
-    "mongoose": "^7.5.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.2",
     "nodemailer": "^6.9.6",
     "pdfkit": "^0.13.0",
     "pg": "^8.21.0",
     "prisma": "^6.19.3",
-    "qrcode": "^1.5.3",
-    "redis": "^4.6.10",
     "sharp": "^0.32.6",
-    "stripe": "^13.8.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "supertest": "^7.2.2"
   }
 }
