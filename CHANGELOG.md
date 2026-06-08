@@ -4,6 +4,20 @@ This document records what was implemented and changed in the FilterNest platfor
 
 ---
 
+## Maintainability: structured logging + frontend de-duplication (2026-06-08)
+
+| Area | Before | After | Why |
+|------|--------|-------|-----|
+| **Logging** | 116 raw `console.log/warn/error` calls | **`pino`** structured logger (`server/lib/logger.js`): levels, sensitive-field redaction, pretty in dev / JSON in prod, silent in tests | Queryable production logs, no secrets in output, log levels. |
+| **Frontend duplication** | `api.js`, `ConfirmationModal`, `SecurityDashboard` were **byte-identical copies** in all 3 apps | Extracted to a shared **npm-workspace package `@filternest/shared`**; each app keeps a one-line re-export shim so existing imports are untouched | One source of truth — a fix happens once, not three times. |
+
+Notes:
+- The workspace **excludes `server`** so the Render backend remains a standalone install (verified: `cd server && npm install` and boot still work independently).
+- Verified the Vercel build path: `cd <app> && npm install && npm run build` succeeds for all 3 with the workspace.
+- Stale app-level `package-lock.json` removed; the workspace uses a single root lockfile.
+
+---
+
 ## Code Quality: error handling, tests, CI, dead-code removal (2026-06-08)
 
 | Area | Before | After | Why |
