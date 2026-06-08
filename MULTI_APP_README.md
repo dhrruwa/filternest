@@ -284,8 +284,8 @@ Test accounts are automatically seeded in the database:
 - Password: password123
 
 **Admin Account**
-- Email: admin@filternest.com
-- Password: admin123
+- Email: <ADMIN_EMAIL from server/.env>
+- Password: <ADMIN_PASSWORD from server/.env>
 
 **Create New Accounts**
 - Customers: Use registration form on customer app

@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const { isAllowedOrigin } = require('../lib/allowedOrigins');
 
 /**
  * Strict Rate Limiter specifically configured for high-risk Authentication endpoints.
@@ -66,61 +67,41 @@ const xssClean = (req, res, next) => {
 };
 
 /**
- * Enterprise Double-Submit CSRF / Custom CORS Header validation check.
- * Strictly prevents cross-site request forgery attacks on state-changing API calls.
+ * Double-submit CSRF protection for state-changing requests.
+ * Enforces BOTH:
+ *   1. The Origin/Referer is present AND on the explicit allow-list.
+ *   2. A custom anti-forgery header is present (X-Requested-With or X-CSRF-Token).
+ * Both are checks a cross-site attacker's <form>/simple request cannot satisfy.
  */
 const csrfCheck = (req, res, next) => {
-  // Safe requests (GET, HEAD, OPTIONS) do not alter server state and are exempted
+  // Safe requests (GET, HEAD, OPTIONS) do not alter server state and are exempted.
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     return next();
   }
 
-  // 1. Origin Header Validation (CORS matching)
+  // 1. Origin/Referer must be present on state-changing methods and allow-listed.
   const origin = req.headers.origin || req.headers.referer;
-  
-  if (origin) {
-    const allowedOrigins = [
-      'https://filternest.vercel.app',
-      'http://localhost:3000',  // Customer App
-      'http://localhost:4000',  // Agent App
-      'http://localhost:5173',  // Vite dev fallback
-      'http://localhost:6000',  // Admin Panel
-      'http://localhost:6001',  // Admin Panel (macOS fallback)
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:4000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:6000',
-      'http://127.0.0.1:6001',  // Admin Panel (macOS fallback)
-      process.env.FRONTEND_URL,
-    ].filter(Boolean);
-
-    // Safe origin matching - use exact string comparison to avoid issues
-    // Extract just the protocol + host from origin/referer if needed
-    let originToCheck = origin;
-    if (origin && origin.includes('/')) {
-      try {
-        const url = new URL(origin);
-        originToCheck = url.origin; // Get protocol + host only
-      } catch (e) {
-        // If URL parsing fails, use original origin
-        originToCheck = origin;
-      }
-    }
-
-    const isAllowed = allowedOrigins.includes(originToCheck);
-    
-    if (!isAllowed) {
-      return res.status(403).json({
-        error: 'CSRF Protection Violation: Request originating from an unauthorized domain.',
-      });
-    }
+  if (!origin) {
+    return res.status(403).json({
+      error: 'CSRF Protection Violation: Missing Origin/Referer header on a state-changing request.',
+    });
+  }
+  if (!isAllowedOrigin(origin)) {
+    return res.status(403).json({
+      error: 'CSRF Protection Violation: Request originating from an unauthorized domain.',
+    });
   }
 
-  // 2. Custom CSRF Request Header validation
-  // Modern single page apps include standard anti-forgery headers on POST/PUT requests
-  const hasCustomHeader = req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers['x-csrf-token'];
-  
-  // Custom headers are blocked by browser-enforced CORS policy on cross-site requests, making this an extremely simple yet effective defense
+  // 2. A custom anti-forgery header must be present. Browsers block these on
+  // cross-site simple requests, so their presence proves a same-site XHR/fetch.
+  const hasCustomHeader =
+    req.headers['x-requested-with'] === 'XMLHttpRequest' || !!req.headers['x-csrf-token'];
+  if (!hasCustomHeader) {
+    return res.status(403).json({
+      error: 'CSRF Protection Violation: Missing required anti-forgery header.',
+    });
+  }
+
   next();
 };
 

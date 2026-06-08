@@ -304,7 +304,7 @@ API:      http://localhost:5001
 **Login Credentials:**
 ```
 Customer: customer@test.com / password123
-Admin:    admin@filternest.com / admin123
+Admin:    the admin you set via ADMIN_EMAIL/ADMIN_PASSWORD in server/.env
 ```
 
 ---

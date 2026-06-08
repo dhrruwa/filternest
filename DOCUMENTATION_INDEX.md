@@ -84,8 +84,8 @@ CUSTOMER APP (http://localhost:3000)
 └── Features: Book services, track bookings, manage payments
 
 ADMIN PANEL (http://localhost:6001)
-├── Email: admin@filternest.com
-├── Password: admin123
+├── Email: <ADMIN_EMAIL from server/.env>
+├── Password: <ADMIN_PASSWORD from server/.env>
 └── Features: Manage customers, agents, bookings, analytics
 
 AGENT APP (http://localhost:4000)
@@ -301,7 +301,7 @@ VITE_API_URL=http://localhost:5001
         ↓
 6. Open http://localhost:6001 (Admin)
         ↓
-7. Login with admin@filternest.com / admin123
+7. Login with the admin you set via ADMIN_EMAIL/ADMIN_PASSWORD in server/.env
         ↓
 8. See the booking in admin dashboard
         ↓

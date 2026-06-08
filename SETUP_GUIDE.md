@@ -138,7 +138,7 @@ After starting the server, use these accounts:
 | Role | Email | Password |
 |------|-------|----------|
 | Customer | customer@test.com | password123 |
-| Admin | admin@filternest.com | admin123 |
+| Admin | <ADMIN_EMAIL from server/.env> | <ADMIN_PASSWORD from server/.env> |
 
 ## Verify Setup
 
@@ -375,7 +375,7 @@ filter-nest/
 
 1. ✅ Start all apps: `./start-all.sh`
 2. ✅ Test customer login: customer@test.com / password123
-3. ✅ Test admin login: admin@filternest.com / admin123
+3. ✅ Test admin login: the admin you set via ADMIN_EMAIL/ADMIN_PASSWORD in server/.env
 4. ✅ Create a booking in customer app
 5. ✅ View booking in admin panel
 6. ✅ Customize branding and colors

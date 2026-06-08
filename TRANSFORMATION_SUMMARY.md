@@ -214,8 +214,8 @@ Customer App (http://localhost:3000)
   Password: password123
 
 Admin Panel (http://localhost:6001)
-  Email: admin@filternest.com
-  Password: admin123
+  Email: <ADMIN_EMAIL from server/.env>
+  Password: <ADMIN_PASSWORD from server/.env>
 ```
 
 ## Usage Instructions

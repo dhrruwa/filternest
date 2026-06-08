@@ -8,12 +8,13 @@ const prisma = require('../lib/prisma');
  */
 const auth = async (req, res, next) => {
   try {
+    // Accept the access token ONLY from the Authorization header or the
+    // HTTP-only cookie. Never from the query string (it leaks into server
+    // logs, browser history, and Referer headers).
     let token = '';
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.split(' ')[1];
-    } else if (req.query.token) {
-      token = req.query.token;
     } else if (req.cookies && req.cookies.token) {
       token = req.cookies.token;
     }

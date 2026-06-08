@@ -9,6 +9,7 @@ const { startMaintenanceReminderScheduler } = require('./services/schedulerServi
 const seedDefaultAdmin = require('./utils/seedDefaultAdmin');
 const seedTestCustomer = require('./utils/seedTestCustomer');
 const { xssClean, csrfCheck } = require('./middleware/securityMiddleware');
+const { isAllowedOrigin } = require('./lib/allowedOrigins');
 const path = require('path');
 
 const app = express();
@@ -20,43 +21,20 @@ app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use(helmet());
 app.use(cors({
   origin: function(origin, callback) {
-    // In development, allow any localhost origin
-    if (process.env.NODE_ENV === 'development') {
-      callback(null, true);
-      return;
+    // Requests with no Origin header (curl, health checks, same-origin
+    // server-to-server) are not browser cross-origin requests -> allow.
+    if (!origin) {
+      return callback(null, true);
     }
-    
-    // In production, check against allowed list
-    const allowedOrigins = [
-      'https://filternest.vercel.app',
-      'http://localhost:3000',  // customer-app
-      'http://localhost:4000',  // agent-app
-      'http://localhost:5173',  // vite dev fallback
-      'http://localhost:6000',  // admin-panel
-      'http://localhost:6001',  // admin-panel (macOS fallback)
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:4000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:6000',
-      'http://127.0.0.1:6001',  // admin-panel (macOS fallback)
-      process.env.FRONTEND_URL
-    ].filter(Boolean);
-    
-    // Allow any Vercel deployment (the 3 frontends each get their own
-    // *.vercel.app domain, plus preview deployments), in addition to the list.
-    let isVercel = false;
-    try {
-      isVercel = origin ? new URL(origin).hostname.endsWith('.vercel.app') : false;
-    } catch (e) {
-      isVercel = false;
+    // Browser cross-origin requests must be on the explicit allow-list.
+    // No wildcards / pattern matching (required because credentials: true).
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
     }
-    const isAllowed = allowedOrigins.includes(origin) || isVercel;
-
-    if (!origin || isAllowed) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    // Not allow-listed: don't set CORS headers (so the browser blocks the
+    // response) and let the request fall through to csrfCheck, which returns
+    // a clean 403 for unauthorized origins instead of a 500.
+    return callback(null, false);
   },
   credentials: true,
 }));
@@ -71,24 +49,40 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Cookie & Security Hardening Middlewares
 app.use(cookieParser());
-app.use(xssClean);
-app.use(csrfCheck);
 
-// Body parser middleware
+// Body parsers MUST run before xssClean/csrfCheck so req.body is populated
+// when those middlewares sanitize/inspect it.
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Debug logging middleware
+// Security hardening middlewares (operate on the parsed body)
+app.use(xssClean);
+app.use(csrfCheck);
+
+// Request logging middleware. Logs method/status/duration only.
+// Never logs the request body in production; in development it logs the body
+// with sensitive fields redacted so passwords/tokens/OTPs are never exposed.
+const SENSITIVE_FIELDS = ['password', 'newPassword', 'currentPassword', 'confirmPassword', 'token', 'refreshToken', 'otp', 'passcode', 'authkey', 'jwt_secret'];
+const redact = (value) => {
+  if (Array.isArray(value)) return value.map(redact);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value)) {
+      out[key] = SENSITIVE_FIELDS.includes(key) ? '[REDACTED]' : redact(value[key]);
+    }
+    return out;
+  }
+  return value;
+};
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`[DEBUG] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+    console.log(`[${req.method}] ${req.url} - ${res.statusCode} (${duration}ms)`);
   });
-  if (req.method !== 'GET') {
-    console.log('[DEBUG] Body:', JSON.stringify(req.body));
+  if (process.env.NODE_ENV === 'development' && req.method !== 'GET' && req.body && Object.keys(req.body).length) {
+    console.log('[BODY]', JSON.stringify(redact(req.body)));
   }
   next();
 });

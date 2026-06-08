@@ -60,7 +60,7 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const response = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
+        const response = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
         const { token } = response.data;
 
         localStorage.setItem('token', token);
