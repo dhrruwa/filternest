@@ -1,15 +1,17 @@
 # Quick Start Guide
 
+> **Note:** See `CHANGELOG.md` for the migration from MongoDB/Mongoose to Supabase (PostgreSQL via Prisma) and production hardening.
+
 ## 🚀 5-Minute Setup
 
-### Step 1: Clone and Navigate
+### Step 1: Navigate to the Repo
 ```bash
-cd /Users/dhruva/Downloads/filter_service
+cd /Users/dhruva/Documents/filter_service_v0
 ```
 
 ### Step 2: Install All Dependencies
 ```bash
-npm run install-all
+npm run install-all   # root + server + customer-app + agent-app + admin-panel
 ```
 
 ### Step 3: Configure Environment
@@ -22,69 +24,79 @@ cp .env.example .env
 
 Edit `.env`:
 ```env
-PORT=5000
+PORT=5001
 NODE_ENV=development
-MONGODB_URI=mongodb://localhost:27017/water-filter-service
+
+# Supabase (PostgreSQL via Prisma) — from Supabase Dashboard -> Connect -> ORMs -> Prisma
+# DATABASE_URL = pooled (port 6543, ?pgbouncer=true) used at runtime
+# DIRECT_URL   = direct (port 5432) used by Prisma Migrate / db push
+DATABASE_URL="postgresql://postgres.<project-ref>:<db-password>@<region>.pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres.<project-ref>:<db-password>@<region>.pooler.supabase.com:5432/postgres"
+
 JWT_SECRET=your_super_secret_key_12345
 JWT_EXPIRE=7d
+
+# OTP: MSG91 SMS is the primary channel; SMTP email is a fallback
+MSG91_AUTH_KEY=your_msg91_auth_key
+MSG91_TEMPLATE_ID=your_msg91_template_id
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
+SMTP_PORT=465
 SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_app_password_or_16char_code
 FRONTEND_URL=http://localhost:3000
 ```
 
-**Frontend (.env)**
+**Frontend (.env)** — each of the three apps (`customer-app`, `agent-app`, `admin-panel`) has its own `.env`:
 ```bash
-cd ../client
-cp .env.example .env
+# In each app dir:
+cp .env.example .env   # if present; otherwise set VITE_API_URL=http://localhost:5001
 ```
 
-### Step 4: MongoDB Setup
+### Step 4: Database Setup (Supabase + Prisma)
 
-**Option A: Local MongoDB**
+The schema lives in `server/prisma/schema.prisma` (17 models). After setting `DATABASE_URL` / `DIRECT_URL`:
+
 ```bash
-# macOS with Homebrew
-brew tap mongodb/brew
-brew install mongodb-community
-brew services start mongodb-community
-
-# Verify connection
-mongosh
+cd server
+npx prisma db push      # create/update tables in Supabase
+npx prisma generate     # regenerate Prisma client (also runs on postinstall/build)
 ```
 
-**Option B: MongoDB Atlas (Cloud)**
-1. Go to https://www.mongodb.com/cloud/atlas
-2. Create free account and cluster
-3. Get connection string
-4. Update MONGODB_URI in server/.env
+> Don't have a Supabase project yet? Create one free at https://supabase.com, then copy the Prisma connection strings from Dashboard -> Connect -> ORMs -> Prisma.
 
 ### Step 5: Seed Initial Data
 ```bash
-cd server
-npm run seed
+npm run seed   # from repo root (seeds service catalog)
 ```
 
 ### Step 6: Start Development Servers
 
-**Terminal 1 - Backend:**
+**Option A — one command (from repo root):**
 ```bash
-cd server
-npm run dev
-# Output: Server is running on port 5000
+npm run dev   # runs backend + all 3 frontends concurrently
 ```
 
-**Terminal 2 - Frontend:**
+**Option B — separate terminals:**
 ```bash
-cd client
-npm run dev
-# Output: Local: http://localhost:3000
+# Terminal 1 - Backend
+cd server && npm run dev          # http://localhost:5001
+
+# Terminal 2 - Customer App
+cd customer-app && npm run dev    # http://localhost:3000
+
+# Terminal 3 - Agent App
+cd agent-app && npm run dev       # http://localhost:4000
+
+# Terminal 4 - Admin Panel
+cd admin-panel && npm run dev     # http://localhost:6001
 ```
 
 ### Step 7: Access the Application
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:5000/api
-- Health Check: http://localhost:5000/api/health
+- Customer App: http://localhost:3000
+- Agent App: http://localhost:4000
+- Admin Panel: http://localhost:6001  *(not 6000 — browsers block 6000 as ERR_UNSAFE_PORT)*
+- Backend API: http://localhost:5001/api
+- Health Check: http://localhost:5001/api/health
 
 ## 📝 Default Test Credentials
 
@@ -107,42 +119,37 @@ After seeding, use these to test:
 ## 📂 Project Structure
 
 ```
-filter_service/
-├── server/                 # Node.js backend
-│   ├── models/            # MongoDB schemas
+filter_service_v0/
+├── server/                 # Node.js backend (Express)
+│   ├── prisma/            # schema.prisma (17 models) — Supabase/PostgreSQL
+│   ├── lib/               # prisma.js (client, aliases id->_id), sanitize.js
 │   ├── controllers/       # Business logic
 │   ├── routes/            # API endpoints
 │   ├── services/          # Services (email, notifications, scheduler)
-│   ├── middleware/        # Auth, validation
+│   ├── middleware/        # Auth, validation, security
 │   ├── utils/             # Utilities
 │   ├── server.js          # Entry point
 │   └── package.json
 │
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── pages/         # React pages
-│   │   ├── components/    # React components
-│   │   ├── services/      # API calls
-│   │   ├── context/       # State management
-│   │   ├── styles/        # CSS/Tailwind
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── package.json
-│   └── index.html
+├── customer-app/           # Customer React + Vite app (port 3000)
+├── agent-app/              # Agent React + Vite app (port 4000)
+├── admin-panel/            # Admin React + Vite app (port 6001)
+│   └── (each: src/pages, src/components, src/services, src/context, vite.config.js, .env)
 │
+├── render.yaml            # Render backend deploy config
+├── CHANGELOG.md           # MongoDB->Supabase migration + hardening log
 ├── README.md              # Full documentation
-├── DEPLOYMENT.md          # Deployment guide
-├── ARCHITECTURE.md        # System design
-└── package.json           # Root scripts
+└── package.json           # Root scripts (npm run dev runs all)
 ```
 
 ## 🔐 Environment Variables Checklist
 
 ### Backend (.env)
-- [ ] MONGODB_URI (MongoDB connection)
+- [ ] DATABASE_URL (Supabase pooled, :6543, ?pgbouncer=true)
+- [ ] DIRECT_URL (Supabase direct, :5432 — for prisma db push)
 - [ ] JWT_SECRET (Change from default!)
-- [ ] SMTP_USER (Email for notifications)
-- [ ] SMTP_PASS (Email app password)
+- [ ] MSG91_AUTH_KEY / MSG91_TEMPLATE_ID (primary OTP — SMS)
+- [ ] SMTP_USER / SMTP_PASS (email fallback)
 - [ ] FRONTEND_URL (Frontend address)
 
 ### Frontend (.env)
@@ -155,7 +162,7 @@ filter_service/
 
 **Register Customer:**
 ```bash
-curl -X POST http://localhost:5000/api/auth/register/customer \
+curl -X POST http://localhost:5001/api/auth/register/customer \
   -H "Content-Type: application/json" \
   -d '{
     "firstName": "John",
@@ -168,7 +175,7 @@ curl -X POST http://localhost:5000/api/auth/register/customer \
 
 **Login:**
 ```bash
-curl -X POST http://localhost:5000/api/auth/login/customer \
+curl -X POST http://localhost:5001/api/auth/login/customer \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john@example.com",
@@ -178,47 +185,48 @@ curl -X POST http://localhost:5000/api/auth/login/customer \
 
 **Get Services:**
 ```bash
-curl http://localhost:5000/api/services
+curl http://localhost:5001/api/services
 ```
 
 ### Using Postman
 1. Download Postman: https://www.postman.com/downloads/
 2. Import the API endpoints (create collection)
-3. Set base URL to `http://localhost:5000/api`
+3. Set base URL to `http://localhost:5001/api`
 4. Test endpoints with request body
 
 ## 🚨 Common Issues & Solutions
 
-### MongoDB Connection Failed
+### Database (Supabase/Prisma) Connection Failed
 ```bash
-# Check if MongoDB is running
-# macOS:
-brew services list
+# Verify DATABASE_URL (pooled, :6543, ?pgbouncer=true) and
+# DIRECT_URL (direct, :5432) are set in server/.env
 
-# Start MongoDB:
-brew services start mongodb-community
+# Push schema to Supabase
+cd server && npx prisma db push
 
-# Windows:
-net start MongoDB
+# Regenerate the Prisma client if you see client errors
+npx prisma generate
 ```
+See TROUBLESHOOTING.md for pooled-vs-direct connection details.
 
 ### Port Already in Use
 ```bash
-# Kill process on port 5000:
-lsof -ti:5000 | xargs kill -9
+# Kill process on backend port 5001:
+lsof -ti:5001 | xargs kill -9
 
-# Kill process on port 3000:
+# Kill process on port 3000 (customer app):
 lsof -ti:3000 | xargs kill -9
 ```
 
 ### CORS Error
 - Ensure FRONTEND_URL is set correctly in backend .env
 - Check browser console for error details
+- Deployed frontends: CORS/CSRF accept any *.vercel.app origin automatically
 
-### Email Not Sending
-- Verify SMTP credentials
-- Use Gmail app password (not regular password)
-- Enable "Less secure app access" if using Gmail
+### OTP / Email Not Sending
+- OTP is delivered via MSG91 SMS first — verify MSG91_AUTH_KEY / MSG91_TEMPLATE_ID
+- SMTP email is the fallback — verify SMTP credentials (Gmail app password, not regular password)
+- Note: Render blocks outbound SMTP in production, so SMS is the production OTP channel
 
 ## 🎯 Next Steps
 
@@ -231,12 +239,11 @@ lsof -ti:3000 | xargs kill -9
    - Add to frontend .env
 
 3. **Set Up Database Backups**
-   - For MongoDB Atlas: enable automatic backups
-   - For local: create cron backup job
+   - Supabase provides automatic daily backups (Dashboard -> Database -> Backups)
 
 4. **Deploy to Production**
-   - See DEPLOYMENT.md for detailed guide
-   - Heroku, AWS, DigitalOcean options available
+   - Backend -> Render (via render.yaml); Frontends -> Vercel; DB -> Supabase
+   - See SETUP_GUIDE.md (Deployment section) and CHANGELOG.md
 
 5. **Set Up Monitoring**
    - Add error tracking (Sentry)
@@ -254,7 +261,8 @@ lsof -ti:3000 | xargs kill -9
 - React: https://react.dev
 - Tailwind CSS: https://tailwindcss.com
 - Express.js: https://expressjs.com
-- MongoDB: https://docs.mongodb.com
+- Prisma: https://www.prisma.io/docs
+- Supabase: https://supabase.com/docs
 - Framer Motion: https://www.framer.com/motion
 
 ---

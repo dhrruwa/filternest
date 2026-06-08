@@ -1,18 +1,73 @@
 # Water Filter Service Management System - Deployment Guide
 
+> **Migration note:** The backend has moved from MongoDB/Mongoose to Supabase (PostgreSQL) via Prisma 6. The deployment path is now **Render** (backend) + **Vercel** (3 frontends) + **Supabase** (database). See [`CHANGELOG.md`](./CHANGELOG.md) for the before → after rationale. Legacy Heroku/AWS/MongoDB notes below are kept only as alternatives.
+
+## Production Architecture
+
+| Tier | Platform | Notes |
+|------|----------|-------|
+| Backend API | **Render** | `render.yaml` blueprint; health check `/api/health` |
+| Frontends (×3) | **Vercel** | `customer-app`, `agent-app`, `admin-panel` as separate projects |
+| Database | **Supabase** (PostgreSQL) | Pooled + direct connection strings |
+
 ## Deployment Checklist
 
 ### Pre-Deployment
-- [ ] All environment variables configured
-- [ ] Database (MongoDB or MySQL) set up
-- [ ] Email service (SMTP) configured
-- [ ] Google Maps API key obtained
-- [ ] SSL certificates prepared
+- [ ] Node.js >=18 available on the build environment
+- [ ] Supabase project created; `DATABASE_URL` + `DIRECT_URL` ready
+- [ ] Prisma schema applied (`npx prisma db push` / `migrate`)
+- [ ] All environment variables configured (JWT, SMTP, MSG91)
+- [ ] MSG91 (primary OTP/SMS) credentials configured; SMTP set as fallback
 - [ ] All tests passing
 
-### Backend Deployment (Node.js + Express)
+### Backend Deployment → Render (current path)
 
-#### Option 1: Heroku
+The repo ships a `render.yaml` blueprint, so Render can provision the service directly from the repo.
+
+1. In the Render dashboard, create a new **Blueprint** from this repo (it reads `render.yaml`).
+2. Render uses:
+   - **Build command:** `npm install` (which runs `prisma generate` via postinstall)
+   - **Start command:** `npm start`
+   - **Health check path:** `/api/health`
+3. Set the following secrets in the Render dashboard (Environment tab):
+   - `DATABASE_URL` — Supabase pooled URL (port `6543`, `?pgbouncer=true`) — used at runtime
+   - `DIRECT_URL` — Supabase direct URL (port `5432`) — used by Prisma migrations
+   - `JWT_SECRET`
+   - SMTP variables (email fallback)
+   - MSG91 variables (primary OTP/SMS)
+4. Deploy. Apply schema changes from your machine with `npx prisma db push` (uses `DIRECT_URL`) or run `prisma migrate deploy` as part of the release.
+
+> CORS and CSRF are configured to accept any `*.vercel.app` origin, and avatar upload URLs are built from the request host (no hardcoded localhost), so the deployed frontends work against the Render API out of the box.
+
+### Frontend Deployment → Vercel (current path)
+
+Deploy each of the three apps as its **own Vercel project**:
+
+```bash
+# Repeat for customer-app, agent-app, and admin-panel
+cd customer-app   # then agent-app, then admin-panel
+vercel --prod
+```
+
+For each Vercel project, set the env var:
+
+```
+VITE_API_URL=https://<your-render-app>.onrender.com
+```
+
+| Vercel project | Local dev port |
+|----------------|----------------|
+| customer-app   | 3000 |
+| agent-app      | 4000 |
+| admin-panel    | 6001 (6000 is blocked by browsers as ERR_UNSAFE_PORT) |
+
+---
+
+## Alternative / Legacy Deployment Notes
+
+> The options below predate the Render/Vercel/Supabase setup and reference the old MongoDB stack. They are retained for reference only.
+
+#### Legacy Backend: Heroku
 ```bash
 # Install Heroku CLI
 npm install -g heroku
@@ -23,35 +78,33 @@ heroku login
 # Create Heroku app
 heroku create water-filter-service
 
-# Add MongoDB addon
-heroku addons:create mongolab:sandbox
-
-# Set environment variables
+# Set environment variables (Postgres connection strings)
+heroku config:set DATABASE_URL=your_pooled_url
+heroku config:set DIRECT_URL=your_direct_url
 heroku config:set JWT_SECRET=your_secret_key
-heroku config:set SMTP_USER=your_email
-heroku config:set SMTP_PASS=your_password
 
 # Deploy
 git push heroku main
 ```
+> Note: Heroku (and similar hosts) block outbound SMTP, which is exactly why MSG91 SMS is the primary OTP channel.
 
-#### Option 2: AWS EC2
+#### Legacy Backend: AWS EC2
 ```bash
 # SSH into EC2 instance
 ssh -i your-key.pem ec2-user@your-instance-ip
 
-# Install Node.js
-curl -sL https://rpm.nodesource.com/setup_16.x | sudo bash -
+# Install Node.js (>=18)
+curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
 sudo yum install -y nodejs
 
 # Clone repository
 git clone https://github.com/yourrepo/water-filter-service.git
 
-# Install dependencies
+# Install dependencies (runs prisma generate)
 cd water-filter-service/server
 npm install
 
-# Create .env file with production values
+# Create .env file with production values (DATABASE_URL, DIRECT_URL, ...)
 nano .env
 
 # Install PM2 for process management
@@ -64,97 +117,31 @@ pm2 startup
 # ... configure Nginx ...
 ```
 
-#### Option 3: DigitalOcean
+#### Legacy Frontend: Netlify / S3
 ```bash
-# SSH into droplet
-ssh root@your-droplet-ip
+# Build each app individually (no single client/ folder)
+cd customer-app && npm run build   # repeat for agent-app, admin-panel
 
-# Install Node.js and npm
-curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Install MongoDB
-wget -qO - https://www.mongodb.org/static/pgp/server-5.0.asc | sudo apt-key add -
-echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-5.0.list
-sudo apt-get update
-sudo apt-get install -y mongodb-org
-
-# Clone and setup application
-git clone https://github.com/yourrepo/water-filter-service.git
-cd water-filter-service/server
-npm install
-
-# Setup PM2
-npm install -g pm2
-pm2 start server.js
-pm2 startup
-pm2 save
-```
-
-### Frontend Deployment
-
-#### Option 1: Vercel (Recommended)
-```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Deploy from client directory
-cd client
-vercel --prod
-```
-
-#### Option 2: Netlify
-```bash
-# Install Netlify CLI
-npm install -g netlify-cli
-
-# Deploy
-cd client
-npm run build
+# Netlify
 netlify deploy --prod --dir=dist
-```
 
-#### Option 3: AWS S3 + CloudFront
-```bash
-# Build the frontend
-cd client
-npm run build
-
-# Deploy to S3
+# Or AWS S3
 aws s3 cp dist s3://your-bucket-name --recursive
-
-# Invalidate CloudFront cache
 aws cloudfront create-invalidation --distribution-id YOUR_DIST_ID --paths "/*"
-```
-
-#### Option 4: GitHub Pages
-```bash
-# Update vite.config.js
-# Add: base: '/water-filter-service/'
-
-cd client
-npm run build
-# Push dist folder to gh-pages branch
 ```
 
 ## Database Setup
 
-### MongoDB Atlas
-1. Create account at https://www.mongodb.com/cloud/atlas
-2. Create cluster
-3. Get connection string
-4. Add to MONGODB_URI in .env
+### Supabase (PostgreSQL) — current
+1. Create a project at https://supabase.com
+2. From **Project Settings → Database**, copy:
+   - the **Connection pooling** string (port `6543`) → set as `DATABASE_URL` and append `?pgbouncer=true`
+   - the **Direct connection** string (port `5432`) → set as `DIRECT_URL`
+3. Apply the schema: `npx prisma db push` (or `npx prisma migrate deploy`)
+4. The Prisma schema lives in `server/prisma/schema.prisma` (17 models)
 
-### MySQL / MariaDB
-```bash
-# Create database
-CREATE DATABASE water_filter_service;
-
-# Create user
-CREATE USER 'wfs_user'@'localhost' IDENTIFIED BY 'strong_password';
-GRANT ALL PRIVILEGES ON water_filter_service.* TO 'wfs_user'@'localhost';
-FLUSH PRIVILEGES;
-```
+### MongoDB Atlas (legacy — no longer used)
+Retained only for historical reference; the app no longer uses MongoDB or the `MONGODB_URI` variable.
 
 ## SSL/HTTPS Configuration
 
@@ -211,16 +198,15 @@ sudo nano /etc/nginx/sites-available/default
 
 1. **Database Backups**
    ```bash
-   # MongoDB backup
-   mongodump --uri "mongodb+srv://..." --out ./backup
+   # PostgreSQL backup (use the DIRECT_URL, port 5432)
+   pg_dump "$DIRECT_URL" > backup.sql
 
-   # MySQL backup
-   mysqldump -u user -p database_name > backup.sql
+   # Restore
+   psql "$DIRECT_URL" < backup.sql
    ```
 
 2. **Automated Backups**
-   - Set up AWS Backup
-   - Use MongoDB Atlas automated backups
+   - Use Supabase's built-in automated daily backups (Project Settings → Database → Backups)
 
 ## Security Hardening
 
@@ -249,14 +235,11 @@ sudo nano /etc/nginx/sites-available/default
 
 | Service | Tier | Cost/Month |
 |---------|------|-----------|
-| Vercel | Pro | $20 |
-| Netlify | Pro | $19 |
-| MongoDB Atlas | M0 (Free) | $0 |
-| | M10 | $57 |
-| Heroku | Standard | $50 |
-| DigitalOcean | Basic | $5-6 |
-| AWS EC2 | t2.micro | $9.50 |
-| SendGrid | Free | $0 |
+| Vercel (×3 frontends) | Hobby / Pro | $0 / $20 |
+| Render (backend) | Free / Starter | $0 / $7 |
+| Supabase (Postgres) | Free / Pro | $0 / $25 |
+| MSG91 (OTP/SMS) | Pay-as-you-go | usage-based |
+| SMTP (email fallback) | Free | $0 |
 
 ## Post-Deployment
 

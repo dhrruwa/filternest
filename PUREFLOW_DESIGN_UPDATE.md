@@ -5,7 +5,12 @@ Successfully applied the PureFlow luxury water filter service design system to t
 
 ## Files Updated
 
-### 1. **Tailwind Configuration** (`client/tailwind.config.js`)
+> Note: the frontend has since been split into three apps (`customer-app`, `agent-app`,
+> `admin-panel`); the single `client/` folder no longer exists. The paths below now live under
+> the relevant app — the customer-facing pages shown here are in `customer-app/`, and the shared
+> design tokens/styles are mirrored across all three apps.
+
+### 1. **Tailwind Configuration** (`customer-app/tailwind.config.js`)
 - Added complete PureFlow color palette:
   - Primary: `#6c2f00` (Warm Brown)
   - Secondary: `#6a5e33` (Olive/Tan)
@@ -25,7 +30,7 @@ Successfully applied the PureFlow luxury water filter service design system to t
   - unit: 8px
   - max-width: 1440px
 
-### 2. **Global Styles** (`client/src/styles/globals.css`)
+### 2. **Global Styles** (`customer-app/src/styles/globals.css`)
 - Imported Playfair Display and Montserrat fonts
 - Imported Material Symbols for icons
 - Created `.glass-card` effect with backdrop blur
@@ -33,7 +38,7 @@ Successfully applied the PureFlow luxury water filter service design system to t
 - Added premium gradient classes
 - Removed old gradient backgrounds
 
-### 3. **Navigation Bar** (`client/src/components/Navbar.jsx`)
+### 3. **Navigation Bar** (`customer-app/src/components/Navbar.jsx`)
 - Redesigned with sticky header using new color scheme
 - Updated logo to "PureFlow Service"
 - Implemented refined navigation links with active states
@@ -41,14 +46,14 @@ Successfully applied the PureFlow luxury water filter service design system to t
 - Improved mobile menu with smooth animations
 - Professional button styling with proper typography
 
-### 4. **Footer** (`client/src/components/Footer.jsx`)
+### 4. **Footer** (`customer-app/src/components/Footer.jsx`)
 - Updated color scheme to `inverse-surface` background
 - Reorganized footer content into Resources, Contact, and Help sections
 - Updated company name and messaging for PureFlow brand
 - Added Material Icons for contact information
 - Improved typography and spacing
 
-### 5. **Home Page** (`client/src/pages/Home.jsx`)
+### 5. **Home Page** (`customer-app/src/pages/Home.jsx`)
 - Complete redesign with PureFlow aesthetic:
   - **Hero Section**: Updated headline, tagline, and CTA buttons
   - **Meticulous Care Section**: Grid of 3 service cards with glass effect
@@ -58,7 +63,7 @@ Successfully applied the PureFlow luxury water filter service design system to t
 - Glass card components with hover animations
 - Semantic color usage throughout
 
-### 6. **Login Page** (`client/src/pages/Login.jsx`)
+### 6. **Login Page** (`customer-app/src/pages/Login.jsx`)
 - Two-column layout (hidden on mobile, visible on desktop)
 - Left side: Brand messaging with features
 - Right side: Premium login form in surface-container
@@ -67,7 +72,7 @@ Successfully applied the PureFlow luxury water filter service design system to t
 - Additional "Continue with Single Sign-On" button
 - Consistent typography and spacing
 
-### 7. **Register Page** (`client/src/pages/Register.jsx`)
+### 7. **Register Page** (`customer-app/src/pages/Register.jsx`)
 - Mirror design of Login page
 - Two-column layout with brand messaging
 - All form fields with icons

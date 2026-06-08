@@ -8,23 +8,21 @@ This is a comprehensive, production-ready full-stack web application for managin
 
 ## 📦 What's Included
 
-### Backend (Node.js + Express) ✅
+### Backend (Node.js + Express + Prisma/Supabase) ✅
 ```
 server/
-├── models/                          # Database Schemas
-│   ├── Customer.js                 # User profiles with location
-│   ├── Agent.js                    # Service professionals (onboarding state parameters)
-│   ├── Booking.js                  # Service requests
-│   ├── MaintenanceSchedule.js      # Reminder tracking
-│   ├── Notification.js             # Multi-channel notifications
-│   ├── Invoice.js                  # Payment records
-│   ├── Service.js                  # Service catalog
-│   ├── Admin.js                    # Admin accounts
-│   ├── Session.js                  # [NEW] Multi-device active session records
-│   ├── RefreshToken.js             # [NEW] Stateful rotation tokens
-│   ├── PasswordResetToken.js       # [NEW] Crypto password reset tokens (15-min expiry)
-│   ├── LoginHistory.js             # [NEW] Authentication audit trail
-│   └── DeviceTracking.js           # [NEW] Recognized device signatures
+├── prisma/
+│   └── schema.prisma                # Prisma schema — 17 PostgreSQL models (Supabase)
+│                                    #   Customer, Agent, Admin, Service, Booking, Invoice,
+│                                    #   Payment, MaintenanceSchedule, SupportTicket,
+│                                    #   Notification, Session, RefreshToken, LoginHistory,
+│                                    #   DeviceTracking, AadhaarVerification,
+│                                    #   EmailVerification, PasswordResetToken
+│   (Note: no server/models/*.js — the old Mongoose models were removed in the migration)
+│
+├── lib/                             # Database access layer
+│   ├── prisma.js                   # Shared Prisma client (aliases Postgres `id` → `_id`)
+│   └── sanitize.js                 # Strips secrets/sensitive fields before responses
 │
 ├── controllers/                     # Business Logic
 │   ├── authController.js           # Enterprise auth, dual-token rotation & technician apply handlers
@@ -67,7 +65,8 @@ server/
 - ✅ JWT authentication with 7-day expiration
 - ✅ Password hashing with bcrypt
 - ✅ Role-based access control (Customer, Agent, Admin)
-- ✅ Geolocation tracking with MongoDB geospatial indexing
+- ✅ Geolocation tracking with latitude/longitude columns (Supabase/PostgreSQL)
+- ✅ OTP via MSG91 SMS (primary), with SMTP email fallback
 - ✅ Email notifications via Nodemailer
 - ✅ Automatic maintenance reminders via Node-cron
 - ✅ Rate limiting and CORS security
@@ -76,8 +75,12 @@ server/
 - ✅ Multi-channel notification system
 
 ### Frontend (React + Vite + Tailwind) ✅
+The frontend is split into three independent apps — `customer-app` (port 3000),
+`agent-app` (port 4000), and `admin-panel` (port 6001). There is no single `client/`
+folder anymore. The structure below shows the shared layout (customer-app shown as the
+example; agent-app and admin-panel follow the same conventions with role-specific pages).
 ```
-client/
+customer-app/
 ├── src/
 │   ├── pages/                       # React Pages
 │   │   ├── Home.jsx                # Landing page with hero
@@ -141,8 +144,10 @@ client/
 
 ```
 filter_service/
-├── 📁 server/                      # Backend
-├── 📁 client/                      # Frontend
+├── 📁 server/                      # Backend (Express + Prisma + Supabase)
+├── 📁 customer-app/                # Customer frontend (port 3000)
+├── 📁 agent-app/                   # Agent frontend (port 4000)
+├── 📁 admin-panel/                 # Admin frontend (port 6001)
 ├── 📁 .github/
 │   └── copilot-instructions.md    # Copilot guidelines
 ├── 📄 README.md                    # Complete documentation
@@ -159,24 +164,27 @@ filter_service/
 ## 🚀 Quick Start (5 Minutes)
 
 ```bash
-# 1. Install all dependencies
+# 1. Install all dependencies (runs `prisma generate` on postinstall)
 npm run install-all
 
 # 2. Configure environment variables
 cd server && cp .env.example .env
-cd ../client && cp .env.example .env
+# then copy .env for each frontend app (customer-app, agent-app, admin-panel)
 
-# 3. Update .env with your settings
-# - MongoDB URI
+# 3. Update server/.env with your settings
+# - DATABASE_URL  (Supabase pooled, port 6543, append ?pgbouncer=true)
+# - DIRECT_URL    (Supabase direct, port 5432, used for migrations)
 # - JWT Secret
-# - SMTP credentials
-# - Frontend URL
+# - MSG91 (SMS) + SMTP credentials (email fallback)
+# - Frontend URL(s)
 
 # 4. Start development servers
 npm run dev
 
-# Backend: http://localhost:5000
-# Frontend: http://localhost:3000
+# Backend:     http://localhost:5001
+# Customer:    http://localhost:3000
+# Agent:       http://localhost:4000
+# Admin Panel: http://localhost:6001
 ```
 
 ---
@@ -251,11 +259,11 @@ npm run dev
 - Smooth scrolling
 
 ### 7. **Database Design** ✅
-- MongoDB with 8 collections
-- Geospatial indexing for location queries
-- Relationships between entities
+- Supabase (PostgreSQL) via Prisma 6, with 17 models
+- Latitude/longitude columns for location queries
+- Relational foreign keys between entities
 - Timestamps for all records
-- Efficient data structure
+- Efficient, normalized data structure
 
 ### 8. **API Design** ✅
 - 50+ RESTful endpoints
@@ -268,21 +276,25 @@ npm run dev
 
 ---
 
-## 💾 Database Collections
+## 💾 Database Models (Prisma / Supabase PostgreSQL — 17 models)
 
-1. **Customers** - User profiles with coordinates and key signatures
-2. **Agents** - Service professionals with KYC papers and onboarding parameters
-3. **Bookings** - Service requests with status states
-4. **MaintenanceSchedules** - Smart periodic reminders
-5. **Notifications** - Multi-channel notification delivery records
-6. **Invoices** - Service billing logs
-7. **Services** - Service catalogs and pricing indices
-8. **Admins** - Company workspace managers
-9. **Sessions** - [NEW] Active multi-device logins tracking browser/OS/fingerprint
-10. **RefreshTokens** - [NEW] Stateful long-lived tokens securing JWT silent rotation
-11. **PasswordResetTokens** - [NEW] Temporary 15-minute encrypted recovery tokens
-12. **LoginHistories** - [NEW] Security login audit tracking suspicious browser profiles
-13. **DeviceTrackings** - [NEW] Recognized machine profiles for location alarms
+1. **Customer** - User profiles with coordinates and key signatures
+2. **Agent** - Service professionals with KYC papers and onboarding parameters
+3. **Admin** - Company workspace managers
+4. **Service** - Service catalogs and pricing indices
+5. **Booking** - Service requests with status states
+6. **Invoice** - Service billing logs
+7. **Payment** - Payment transaction records
+8. **MaintenanceSchedule** - Smart periodic reminders
+9. **SupportTicket** - Customer support requests
+10. **Notification** - Multi-channel notification delivery records
+11. **Session** - Active multi-device logins tracking browser/OS/fingerprint
+12. **RefreshToken** - Stateful long-lived tokens securing JWT silent rotation
+13. **LoginHistory** - Security login audit tracking suspicious browser profiles
+14. **DeviceTracking** - Recognized machine profiles for location alarms
+15. **AadhaarVerification** - Agent identity verification records
+16. **EmailVerification** - Email verification tokens
+17. **PasswordResetToken** - Temporary 15-minute recovery tokens
 
 ---
 
@@ -366,11 +378,12 @@ npm run dev
 ## 🛠️ Technology Stack
 
 ### Backend
-- **Runtime**: Node.js
+- **Runtime**: Node.js (>=18)
 - **Framework**: Express.js
-- **Database**: MongoDB with Mongoose
+- **Database**: Supabase (PostgreSQL) via Prisma 6 ORM
 - **Authentication**: JWT (jsonwebtoken)
-- **Password Security**: bcryptjs
+- **Password Security**: bcryptjs (hashed explicitly in controllers)
+- **OTP / SMS**: MSG91 (primary), SMTP email fallback
 - **Email**: Nodemailer
 - **Scheduling**: node-cron
 - **Validation**: express-validator
@@ -389,11 +402,12 @@ npm run dev
 - **Routing**: React Router DOM
 - **Responsive**: Mobile-first design
 
-### DevOps Ready
+### DevOps / Deployment
 - Environment variables (.env)
-- Docker-ready structure
-- Deployment guides for Heroku, AWS, DigitalOcean
-- Database setup guides
+- Backend deployed to **Render** (`render.yaml`; `prisma generate` wired into build)
+- Frontends deployed to **Vercel** (one project per app)
+- Database hosted on **Supabase**
+- CORS/CSRF accept any `*.vercel.app` origin
 - SSL/HTTPS ready
 - Logging structure
 - Error tracking structure
@@ -445,7 +459,8 @@ npm run dev
 - React Documentation: https://react.dev
 - Tailwind CSS: https://tailwindcss.com
 - Express.js: https://expressjs.com
-- MongoDB: https://docs.mongodb.com
+- Prisma: https://www.prisma.io/docs
+- Supabase: https://supabase.com/docs
 - Framer Motion: https://www.framer.com/motion
 
 ---
@@ -453,8 +468,8 @@ npm run dev
 ## 📋 Next Steps
 
 1. **Configure Environment**
-   - Set up MongoDB (Atlas or local)
-   - Configure email service
+   - Set up Supabase project; set `DATABASE_URL` + `DIRECT_URL`
+   - Configure MSG91 (SMS) and email service (SMTP fallback)
    - Update API keys
 
 2. **Development**
@@ -489,7 +504,7 @@ npm run dev
 | Responsive Design | ✅ | Mobile-first |
 | Animations | ✅ | Framer Motion |
 | Security | ✅ | CORS, Helmet, Rate limiting |
-| Database | ✅ | MongoDB with indexes |
+| Database | ✅ | Supabase (PostgreSQL) via Prisma |
 | API Documentation | ✅ | Complete endpoints |
 | Deployment Ready | ✅ | Multiple platform guides |
 
@@ -498,6 +513,13 @@ npm run dev
 ## 📂 Enterprise Auth & Onboarding Upgrade - File Audit Trail
 
 Below is the complete inventory of all files created and modified (updated) during this comprehensive security and onboarding system redesign. No files were deleted from the repository.
+
+> **Note (post-migration):** This audit trail predates two later changes. (1) The single
+> `client/` frontend was split into three apps (`customer-app`, `agent-app`, `admin-panel`),
+> so the `client/src/...` paths below now live under the appropriate app. (2) The backend was
+> migrated from MongoDB/Mongoose to Supabase (PostgreSQL) via Prisma — the `server/models/*.js`
+> files referenced below were replaced by models in `server/prisma/schema.prisma`. See the root
+> `CHANGELOG.md` for the full before→after migration record.
 
 ### 🆕 Newly Created Files (11 Files)
 

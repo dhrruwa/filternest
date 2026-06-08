@@ -1,5 +1,7 @@
 # Architecture & System Design
 
+> **Migration note:** Persistence has moved from MongoDB/Mongoose to Supabase (PostgreSQL) via Prisma 6. The schemas below are now Prisma models in `server/prisma/schema.prisma`. See [`CHANGELOG.md`](./CHANGELOG.md) for the before → after rationale.
+
 ## System Architecture
 
 ```
@@ -35,11 +37,11 @@
                            │
          ┌─────────────────┼─────────────────┐
          │                 │                 │
-     ┌───▼────┐      ┌─────▼──────┐    ┌────▼────┐
-     │MongoDB │      │ Redis Cache│    │ Queue   │
-     │Database│      │ (Sessions) │    │ System  │
-     └────────┘      └────────────┘    └────┬────┘
-                                             │
+     ┌───▼────────┐  ┌─────▼──────┐    ┌────▼────┐
+     │ Supabase   │  │ Redis Cache│    │ Queue   │
+     │(PostgreSQL │  │ (Sessions) │    │ System  │
+     │ via Prisma)│  └────────────┘    └────┬────┘
+     └────────────┘                          │
                                        ┌─────▼─────┐
                                        │ Cron Jobs │
                                        │Scheduler  │
@@ -50,7 +52,7 @@
 
 ### 1. Customer Self-Registration & Vetting
 ```
-Customer Input → Express Validator → Save to DB (verified: false) → Generate Verification OTP → Nodemailer Dispatch → OTP Match → Save (verified: true)
+Customer Input → Express Validator → Save to Postgres via Prisma (verified: false) → Generate Verification OTP → MSG91 SMS Dispatch (primary; Nodemailer/SMTP as best-effort fallback) → OTP Match → Update (verified: true)
 ```
 
 ### 2. Admin-Controlled Agent Onboarding (Strict Uber/Urban Company Model)
@@ -59,7 +61,7 @@ Technician Candidate → Public Application Form (/technician-application)
   ↓
 Upload Name, Contact, Permanent Address, Aadhaar, PAN, DL, and Profile Avatar
   ↓
-Stored in MongoDB (isApproved: false, registrationStatus: 'pending')
+Stored in Postgres via Prisma (isApproved: false, registrationStatus: 'pending')
   ↓
 Admin logs into Dashboard → Pending tab → Inspects Profile Vetting details
   ↓
@@ -103,94 +105,93 @@ Create Session document mapped to the user
 
 ---
 
-## Database Schemas (Extended Collections)
+## Database Schemas (Prisma / PostgreSQL)
 
-### 1. Customer Collection (`Customer.js`)
-```javascript
-{
-  _id: ObjectId,
-  firstName: String,
-  lastName: String,
-  email: String (unique),
-  phone: String (unique),
-  password: String (hashed),
-  address: { street: String, city: String, state: String, pincode: String },
-  location: { type: "Point", coordinates: [longitude, latitude] },
-  verified: Boolean,
-  biometrics: { publicKey: String, credentialId: String, deviceId: String },
-  createdAt: Date
-}
+All persistence is defined in `server/prisma/schema.prisma` as **17 Prisma models**:
+`Customer`, `Agent`, `Admin`, `Service`, `Booking`, `Invoice`, `Payment`, `MaintenanceSchedule`, `SupportTicket`, `Notification`, `Session`, `RefreshToken`, `LoginHistory`, `DeviceTracking`, `AadhaarVerification`, `EmailVerification`, `PasswordResetToken`.
+
+- Primary keys are Postgres `id` columns. `server/lib/prisma.js` (the shared client) aliases `id` → `_id` on the way out so existing frontend code keeps working.
+- `server/lib/sanitize.js` strips secrets (e.g. password hashes, tokens) from responses, replacing the old Mongoose `toJSON` transform.
+- Apply schema changes with `npx prisma db push` (or `npx prisma migrate dev`); `prisma generate` runs on `postinstall` and `build`.
+
+The model shapes below are illustrative (field names mirror the Prisma schema).
+
+### 1. Customer (`model Customer`)
+```prisma
+id           String   @id @default(cuid())   // exposed to clients as _id
+firstName    String
+lastName     String
+email        String   @unique
+phone        String   @unique
+password     String   // hashed
+address      Json     // { street, city, state, pincode }
+location     Json?    // { coordinates: [longitude, latitude] }
+verified     Boolean  @default(false)
+biometrics   Json?    // { publicKey, credentialId, deviceId }
+createdAt    DateTime @default(now())
 ```
 
-### 2. Agent Collection (`Agent.js`)
-```javascript
-{
-  _id: ObjectId,
-  agentId: String (unique, read-only: AGXXXXXX),
-  firstName: String,
-  lastName: String,
-  email: String (unique),
-  phone: String (unique),
-  password: String (hashed, passcode configured by admin),
-  documents: { aadhar: String, panCard: String, drivingLicense: String },
-  profileImage: String,
-  address: { street: String, city: String, state: String, pincode: String },
-  role: { type: String, default: 'agent' },
-  isApproved: { type: Boolean, default: false },
-  isVerified: { type: Boolean, default: false },
-  isActive: { type: Boolean, default: false },
-  registrationStatus: { type: String, enum: ['pending', 'active', 'rejected', 'suspended'] },
-  rejectedReason: String,
-  approvalDate: Date,
-  approvedBy: ObjectId (ref: Admin)
-}
+### 2. Agent (`model Agent`)
+```prisma
+id                 String   @id @default(cuid())
+agentId            String   @unique   // read-only: AGXXXXXX
+firstName          String
+lastName           String
+email              String   @unique
+phone              String   @unique
+password           String   // hashed; passcode configured by admin
+documents          Json     // { aadhar, panCard, drivingLicense }
+profileImage       String?
+address            Json     // { street, city, state, pincode }
+role               String   @default("agent")
+isApproved         Boolean  @default(false)
+isVerified         Boolean  @default(false)
+isActive           Boolean  @default(false)
+registrationStatus String   @default("pending") // pending | active | rejected | suspended
+rejectedReason     String?
+approvalDate       DateTime?
+approvedBy         String?  // -> Admin.id
 ```
 
-### 3. Session Collection (`Session.js`)
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId,
-  userModel: String (enum: ['Customer', 'Agent', 'Admin']),
-  refreshTokenId: ObjectId (ref: RefreshToken),
-  os: String,
-  browser: String,
-  deviceType: String,
-  deviceName: String,
-  ipAddress: String,
-  location: String,
-  isActive: { type: Boolean, default: true },
-  expiresAt: Date
-}
+### 3. Session (`model Session`)
+```prisma
+id             String   @id @default(cuid())
+userId         String
+userModel      String   // Customer | Agent | Admin
+refreshTokenId String?  // -> RefreshToken.id
+os             String?
+browser        String?
+deviceType     String?
+deviceName     String?
+ipAddress      String?
+location       String?
+isActive       Boolean  @default(true)
+expiresAt      DateTime
 ```
 
-### 4. Refresh Token Collection (`RefreshToken.js`)
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId,
-  userModel: String,
-  token: String (secure dynamic payload),
-  isRevoked: { type: Boolean, default: false },
-  expiresAt: Date
-}
+### 4. Refresh Token (`model RefreshToken`)
+```prisma
+id        String   @id @default(cuid())
+userId    String
+userModel String
+token     String   // secure dynamic payload
+isRevoked Boolean  @default(false)
+expiresAt DateTime
 ```
 
-### 5. Login History Collection (`LoginHistory.js`)
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId,
-  userModel: String,
-  email: String,
-  os: String,
-  browser: String,
-  deviceType: String,
-  ipAddress: String,
-  location: String,
-  status: String (enum: ['success', 'failed', 'suspicious']),
-  reason: String
-}
+### 5. Login History (`model LoginHistory`)
+```prisma
+id         String   @id @default(cuid())
+userId     String?
+userModel  String?
+email      String
+os         String?
+browser    String?
+deviceType String?
+ipAddress  String?
+location   String?
+status     String   // success | failed | suspicious
+reason     String?
 ```
 
 ---

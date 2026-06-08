@@ -21,7 +21,7 @@ filter-nest/
 filter-nest/
 ├── customer-app/    ✅ (Port 3000)
 ├── agent-app/       ✅ (Port 4000)
-├── admin-panel/     ✅ (Port 6000)
+├── admin-panel/     ✅ (Port 6001)
 └── server/          ✅ (Port 5001)
 ```
 
@@ -43,7 +43,8 @@ filter-nest/
 - **Features:** Job assignment, GPS tracking, attendance, earnings
 - **Authentication:** Agent-only access
 
-#### 3. **Admin Panel** (http://localhost:6000)
+#### 3. **Admin Panel** (http://localhost:6001)
+> Note: the admin panel uses port **6001**, not 6000 — browsers block 6000 as `ERR_UNSAFE_PORT`.
 - **Color Scheme:** Dark slate (enterprise control center)
 - **Pages:** AdminDashboard, Login, ForgotPassword, ResetPassword, NotFound
 - **Components:** Navbar, Footer, SecurityDashboard, etc.
@@ -108,7 +109,7 @@ filter-nest/
 **Port Assignments:**
 - Customer App: 3000
 - Agent App: 4000
-- Admin Panel: 6000
+- Admin Panel: 6001
 - Backend API: 5001
 
 **Environment Setup:**
@@ -146,10 +147,10 @@ All apps use:
 - React Hot Toast 2.4.1
 
 Backend uses:
-- Express.js
-- MongoDB + Mongoose
+- Node.js (>=18) + Express.js
+- Supabase (PostgreSQL) + Prisma 6 (client in `server/lib/prisma.js`, `_id` alias)
 - JWT authentication
-- Nodemailer for emails
+- MSG91 for OTP SMS (primary), Nodemailer/SMTP for emails (fallback)
 - Node-cron for scheduling
 
 ## File Structure
@@ -212,7 +213,7 @@ Customer App (http://localhost:3000)
   Email: customer@test.com
   Password: password123
 
-Admin Panel (http://localhost:6000)
+Admin Panel (http://localhost:6001)
   Email: admin@filternest.com
   Password: admin123
 ```
@@ -241,7 +242,7 @@ Terminal 4: cd admin-panel && npm run dev
 
 ### ✅ Customer App
 - [x] User registration & email verification
-- [x] Login with mobile OTP option
+- [x] Login (email/password; OTP via MSG91 SMS with email fallback)
 - [x] Browse water filter services
 - [x] Book services with location picker
 - [x] Real-time booking tracking
@@ -282,7 +283,7 @@ Terminal 4: cd admin-panel && npm run dev
 - [x] Enterprise-grade controls
 
 ### ✅ Backend (Shared)
-- [x] MongoDB integration
+- [x] Supabase (PostgreSQL) integration via Prisma
 - [x] JWT authentication
 - [x] Role-based authorization
 - [x] CORS for all three apps
@@ -300,8 +301,8 @@ Terminal 4: cd admin-panel && npm run dev
 ```
 Customer: https://customer.filternest.com (Port 3000 → Vercel)
 Agent:    https://agent.filternest.com    (Port 4000 → Vercel)
-Admin:    https://admin.filternest.com    (Port 6000 → Vercel)
-API:      https://api.filternest.com      (Port 5001 → Heroku/AWS)
+Admin:    https://admin.filternest.com    (Port 6001 → Vercel)
+API:      https://api.filternest.com      (Port 5001 → Render)
 ```
 
 ### Build Commands
@@ -309,8 +310,12 @@ API:      https://api.filternest.com      (Port 5001 → Heroku/AWS)
 cd customer-app && npm run build    # Creates dist/
 cd agent-app && npm run build       # Creates dist/
 cd admin-panel && npm run build     # Creates dist/
-cd server && npm run build          # Creates build/
+cd server && npm run build          # Runs `prisma generate` (Render does this automatically)
 ```
+
+> Deployment note: backend → **Render** (`render.yaml`), frontends → **Vercel**, database →
+> **Supabase**. CORS/CSRF accept any `*.vercel.app` origin. See the root `CHANGELOG.md` for the
+> MongoDB→Supabase migration and production-hardening details.
 
 ## Documentation Provided
 
@@ -325,7 +330,7 @@ cd server && npm run build          # Creates build/
 - [x] Created separate agent app
 - [x] Created separate admin panel
 - [x] Maintained single backend
-- [x] Configured correct ports (3000, 4000, 6000, 5001)
+- [x] Configured correct ports (3000, 4000, 6001, 5001)
 - [x] Set up role-based authentication
 - [x] Created Navbar with role-specific navigation
 - [x] Created Footer components
@@ -391,7 +396,7 @@ The system is now ready for testing, customization, and deployment to production
 
 **Backend:** 1 Centralized API
 
-**Database:** MongoDB (Shared)
+**Database:** Supabase / PostgreSQL (Shared, via Prisma)
 
 **Deployment Ready:** Yes
 

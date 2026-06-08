@@ -3,10 +3,15 @@
 ## Overview
 Successfully implemented a comprehensive role-based access control (RBAC) system that enforces different user experiences based on role (Customer, Agent, Admin).
 
+> Note: the frontend has since been split into three independent apps — `customer-app`,
+> `agent-app`, and `admin-panel`. The single `client/` folder referenced below no longer exists;
+> the file paths now live under the relevant app (the customer-facing files shown here live in
+> `customer-app/`, while role-specific navigation/dashboards live in their respective apps).
+
 ## Key Implementation Changes
 
 ### 1. Frontend Navigation (Navbar)
-**File:** [client/src/components/Navbar.jsx](client/src/components/Navbar.jsx)
+**File:** `customer-app/src/components/Navbar.jsx` (each app has its own role-specific Navbar)
 
 **Customer Navbar Links:**
 - Home
@@ -43,7 +48,7 @@ Successfully implemented a comprehensive role-based access control (RBAC) system
 - Get Started
 
 ### 2. Route Protection (App.jsx)
-**File:** [client/src/App.jsx](client/src/App.jsx)
+**File:** `customer-app/src/App.jsx` (each app has its own App.jsx with role guards)
 
 **Protected Routes:**
 - `/my-bookings` - Only CUSTOMER role
@@ -68,7 +73,7 @@ const ProtectedRoute = ({ element, allowedRoles }) => {
 ```
 
 ### 3. Customer Dashboard (Redesigned)
-**File:** [client/src/pages/Dashboard.jsx](client/src/pages/Dashboard.jsx)
+**File:** `customer-app/src/pages/Dashboard.jsx`
 
 Now renamed as "CustomerDashboard" with comprehensive features:
 
@@ -108,7 +113,7 @@ Now renamed as "CustomerDashboard" with comprehensive features:
    - Edit Profile button (button placeholder)
 
 ### 4. BookingTracker Component (New)
-**File:** [client/src/components/BookingTracker.jsx](client/src/components/BookingTracker.jsx)
+**File:** `customer-app/src/components/BookingTracker.jsx`
 
 **Features:**
 - Visual timeline showing 5-step service progression
@@ -140,7 +145,7 @@ Now renamed as "CustomerDashboard" with comprehensive features:
 - `PUT /api/bookings/:id/status` - agent, admin only
 
 ### 6. Authentication Utilities
-**File:** [client/src/utils/auth.js](client/src/utils/auth.js)
+**File:** `customer-app/src/utils/auth.js` (mirrored in each app)
 
 **Key Functions:**
 - `normalizeRole(role)` - Normalizes role strings to lowercase
@@ -165,7 +170,7 @@ const ADMIN_ROLES = ['admin', 'super_admin'];
 ```
 
 ### 7. Zustand Auth Store (Enhanced)
-**File:** [client/src/context/authStore.js](client/src/context/authStore.js)
+**File:** `customer-app/src/context/authStore.js` (mirrored in each app)
 
 **Enhanced Features:**
 - Stores user, token, and role in global state

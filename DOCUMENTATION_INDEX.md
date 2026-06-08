@@ -1,16 +1,19 @@
 # 📚 FilterNest Multi-App Architecture - Complete Documentation Index
 
+> **Note:** See `CHANGELOG.md` for the migration from MongoDB/Mongoose to Supabase (PostgreSQL via Prisma) and production hardening (before → after rationale).
+
 ## 🎯 Start Here
 
 ### Fastest Way to Get Running
 ```bash
-./start-all.sh
+npm run install-all   # root + all 4 apps
+npm run dev           # backend + all 3 frontends concurrently
 ```
 
 Then open:
 - 🛒 Customer: http://localhost:3000
 - 🔧 Agent: http://localhost:4000  
-- ⚙️ Admin: http://localhost:6000
+- ⚙️ Admin: http://localhost:6001  (not 6000 — browsers block 6000 as ERR_UNSAFE_PORT)
 
 ---
 
@@ -49,24 +52,25 @@ Then open:
 | `TRANSFORMATION_SUMMARY.md` | Architecture changes | 20+ |
 | `DELIVERABLES.md` | Complete deliverables list | 30+ |
 | `README.md` | Project overview | 10+ |
-| `QUICKSTART.md` | Original quick start (for reference) | 10+ |
+| `QUICKSTART.md` | 5-minute setup (Supabase/Prisma) | 10+ |
+| `CHANGELOG.md` | MongoDB → Supabase migration + production hardening, with before → after rationale | — |
 
 ---
 
 ## 🚀 Quick Commands
 
 ```bash
-# ONE COMMAND STARTUP
-./start-all.sh
+# ONE COMMAND STARTUP (from repo root)
+npm run dev   # runs backend + all 3 frontends concurrently
 
-# Verify setup
-./verify-multi-app.sh
+# Push the database schema to Supabase (first run)
+cd server && npx prisma db push
 
 # Manual startup (use 4 terminals)
-Terminal 1: cd server && npm install && npm run dev
-Terminal 2: cd customer-app && npm install && npm run dev
-Terminal 3: cd agent-app && npm install && npm run dev
-Terminal 4: cd admin-panel && npm install && npm run dev
+Terminal 1: cd server && npm install && npm run dev        # 5001
+Terminal 2: cd customer-app && npm install && npm run dev  # 3000
+Terminal 3: cd agent-app && npm install && npm run dev     # 4000
+Terminal 4: cd admin-panel && npm install && npm run dev   # 6001
 ```
 
 ---
@@ -79,7 +83,7 @@ CUSTOMER APP (http://localhost:3000)
 ├── Password: password123
 └── Features: Book services, track bookings, manage payments
 
-ADMIN PANEL (http://localhost:6000)
+ADMIN PANEL (http://localhost:6001)
 ├── Email: admin@filternest.com
 ├── Password: admin123
 └── Features: Manage customers, agents, bookings, analytics
@@ -99,7 +103,7 @@ AGENT APP (http://localhost:4000)
 │                   Multi-Frontend SaaS                    │
 └──────────────────────────────────────────────────────────┘
 
-                  MongoDB Database
+            Supabase (PostgreSQL) via Prisma
                         │
          ┌──────────────┴──────────────┐
          │                             │
@@ -113,7 +117,7 @@ AGENT APP (http://localhost:4000)
     ▼    ▼                ▼
 Customer Agent            Admin
 App      App              Panel
-3000     4000             6000
+3000     4000             6001
 React    React            React
 Vite     Vite             Vite
 ```
@@ -123,10 +127,10 @@ Vite     Vite             Vite
 ## ✅ Pre-Flight Checklist
 
 Before starting, verify:
-- [ ] Node.js v16+ installed
+- [ ] Node.js v18+ installed (engines: ">=18")
 - [ ] npm or yarn installed
-- [ ] MongoDB running (local or Atlas)
-- [ ] Ports 3000, 4000, 5001, 6000 are free
+- [ ] Supabase project created; DATABASE_URL + DIRECT_URL set, schema pushed (`npx prisma db push`)
+- [ ] Ports 3000, 4000, 5001, 6001 are free
 - [ ] All .env files configured
 
 **Verify setup:**
@@ -164,7 +168,7 @@ Before starting, verify:
 
 **Tech:** React + Vite + Tailwind (Teal theme)
 
-### 3. Admin Panel (Port 6000)
+### 3. Admin Panel (Port 6001)
 **Purpose:** Enterprise administration
 
 **Key Pages:**
@@ -189,7 +193,7 @@ Before starting, verify:
 - `/api/notifications/*` - Notifications
 - `/api/services/*` - Service catalog
 
-**Tech:** Express.js + MongoDB + JWT
+**Tech:** Express.js + Supabase (PostgreSQL via Prisma) + JWT
 
 ---
 
@@ -201,9 +205,17 @@ Before starting, verify:
 ```env
 NODE_ENV=development
 PORT=5001
-MONGODB_URI=mongodb://localhost:27017/water-filter-service
+
+# Supabase (PostgreSQL via Prisma)
+DATABASE_URL="postgresql://postgres.<ref>:<pw>@<region>.pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres.<ref>:<pw>@<region>.pooler.supabase.com:5432/postgres"
+
 JWT_SECRET=your_secret_key_change_in_production
 JWT_EXPIRE=7d
+
+# OTP: MSG91 SMS primary, SMTP email fallback
+MSG91_AUTH_KEY=your_msg91_auth_key
+MSG91_TEMPLATE_ID=your_msg91_template_id
 ```
 
 **Frontend (.env in each app)**
@@ -219,8 +231,8 @@ VITE_API_URL=http://localhost:5001
 |--------|-------|
 | Frontend Apps | 3 ✅ |
 | Backend APIs | 1 (Shared) ✅ |
-| Total Ports | 4 (3000, 4000, 5001, 6000) |
-| Database | MongoDB |
+| Total Ports | 4 (3000, 4000, 5001, 6001) |
+| Database | Supabase (PostgreSQL) via Prisma 6 — 17 models |
 | Framework | React 18 + Express.js |
 | Build Tool | Vite |
 | Styling | Tailwind CSS |
@@ -263,7 +275,7 @@ VITE_API_URL=http://localhost:5001
 - [x] System monitoring
 
 **Backend:**
-- [x] MongoDB integration
+- [x] Supabase (PostgreSQL) integration via Prisma
 - [x] JWT authentication
 - [x] Role-based authorization
 - [x] CORS for 3 apps
@@ -287,7 +299,7 @@ VITE_API_URL=http://localhost:5001
         ↓
 5. Book a service
         ↓
-6. Open http://localhost:6000 (Admin)
+6. Open http://localhost:6001 (Admin)
         ↓
 7. Login with admin@filternest.com / admin123
         ↓
@@ -315,7 +327,7 @@ VITE_API_URL=http://localhost:5001
    ```
 4. **Check ports:**
    ```bash
-   lsof -i :3000 :4000 :5001 :6000
+   lsof -i :3000 :4000 :5001 :6001
    ```
 5. **See TROUBLESHOOTING.md** for detailed solutions
 
@@ -378,11 +390,11 @@ Your FilterNest system now has:
 ✅ **3 Independent Frontend Applications**
 - Customer (Port 3000)
 - Agent (Port 4000)
-- Admin (Port 6000)
+- Admin (Port 6001)
 
 ✅ **1 Centralized Backend API**
 - Port 5001
-- MongoDB database
+- Supabase (PostgreSQL) via Prisma
 - JWT authentication
 
 ✅ **Professional Documentation**

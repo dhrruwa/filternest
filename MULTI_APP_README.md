@@ -2,6 +2,8 @@
 
 A professional multi-frontend SaaS application with separate frontend applications for customers, agents, and administrators, all connected to a centralized backend.
 
+> **Migration note:** The backend has moved from MongoDB/Mongoose to Supabase (PostgreSQL) via Prisma 6. See [`CHANGELOG.md`](./CHANGELOG.md) for the full before → after rationale.
+
 ## 📋 Architecture Overview
 
 ```
@@ -27,10 +29,11 @@ filter-nest/
 
 ### Backend
 - **Node.js + Express.js** - Server framework
-- **MongoDB** - NoSQL database
-- **Mongoose** - ODM for MongoDB
+- **Supabase (PostgreSQL)** - Relational database
+- **Prisma 6** - ORM (schema, migrations, type-safe client)
 - **JWT** - Authentication
-- **Nodemailer** - Email service
+- **MSG91** - Primary OTP/SMS channel
+- **Nodemailer** - Email service (best-effort fallback)
 - **Express-validator** - Input validation
 
 ## 📦 Applications
@@ -74,8 +77,10 @@ Field workforce dashboard for service technicians.
 - `/earnings` - Earnings overview
 - `/profile` - Agent profile
 
-### 3. Admin Panel (Port 6000)
+### 3. Admin Panel (Port 6001)
 Enterprise administration control center.
+
+> Dev port is **6001**, not 6000 — browsers block port 6000 as `ERR_UNSAFE_PORT`.
 
 **Key Features:**
 - Customer management
@@ -111,8 +116,8 @@ Centralized API server handling all business logic.
 ## 🔧 Installation
 
 ### Prerequisites
-- Node.js v16+
-- MongoDB (local or Atlas)
+- Node.js >=18
+- A Supabase (PostgreSQL) project (or any Postgres instance)
 - npm or yarn
 
 ### Setup Steps
@@ -126,15 +131,20 @@ cd filter-nest
 2. **Backend Setup**
 ```bash
 cd server
-npm install
+npm install   # also runs `prisma generate` on postinstall
 cp .env.example .env
 
 # Edit .env with your configuration
-# MONGODB_URI=mongodb://localhost:27017/water-filter-service
+# DATABASE_URL=postgresql://...@...pooler.supabase.com:6543/postgres?pgbouncer=true  # pooled, runtime
+# DIRECT_URL=postgresql://...@...supabase.com:5432/postgres                          # direct, migrations
 # JWT_SECRET=your_secret_key
-# SMTP configuration for email
+# MSG91 credentials for OTP/SMS (primary)
+# SMTP configuration for email (fallback)
 # NODE_ENV=development
 # PORT=5001
+
+# Apply the Prisma schema to your database
+npx prisma db push   # or: npx prisma migrate dev
 
 npm run dev
 ```
@@ -160,7 +170,7 @@ npm run dev
 cd ../admin-panel
 npm install
 npm run dev
-# Runs on http://localhost:6000
+# Runs on http://localhost:6001
 ```
 
 ## 🎯 Quick Start (All Apps)
@@ -221,7 +231,7 @@ echo "All applications started!"
 echo "================================"
 echo "Customer App:  http://localhost:3000"
 echo "Agent App:     http://localhost:4000"
-echo "Admin Panel:   http://localhost:6000"
+echo "Admin Panel:   http://localhost:6001"
 echo "Backend API:   http://localhost:5001"
 echo "================================"
 echo ""
@@ -244,7 +254,7 @@ chmod +x start-all.sh
 |-----|-----|------|
 | Customer | http://localhost:3000 | Customer/User |
 | Agent | http://localhost:4000 | Technician/Agent |
-| Admin | http://localhost:6000 | Administrator |
+| Admin | http://localhost:6001 | Administrator |
 | Backend API | http://localhost:5001 | N/A |
 
 ## 🔐 Authentication
@@ -293,11 +303,13 @@ cors({
   origin: [
     'http://localhost:3000',  // customer-app
     'http://localhost:4000',  // agent-app
-    'http://localhost:6000'   // admin-panel
+    'http://localhost:6001'   // admin-panel
   ],
   credentials: true
 })
 ```
+
+> In production, CORS (and CSRF) also accept any `*.vercel.app` origin so the deployed frontends can reach the Render API.
 
 ### Environment Variables
 
@@ -378,39 +390,35 @@ VITE_API_URL=https://api.filternest.com
 **Backend:**
 ```
 NODE_ENV=production
-MONGODB_URI=<production-mongodb-uri>
+DATABASE_URL=<supabase-pooled-url:6543?pgbouncer=true>
+DIRECT_URL=<supabase-direct-url:5432>
 JWT_SECRET=<strong-secret-key>
 FRONTEND_URL=https://filternest.com
 ```
 
-### Deployment Options
+### Deployment Options (current production path)
 
-1. **Vercel** (Frontend)
-   - Deploy each app separately
-   - Connect to GitHub for auto-deployment
+1. **Backend → Render** (via `render.yaml` blueprint)
+   - Build: `npm install` (runs `prisma generate`); Start: `npm start`
+   - Health check: `/api/health`
+   - Secrets set in the Render dashboard: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, SMTP, MSG91
 
-2. **AWS** (Frontend + Backend)
-   - S3 + CloudFront for frontend
-   - EC2 or ECS for backend
+2. **Frontends → Vercel** (3 separate projects)
+   - Deploy `customer-app`, `agent-app`, `admin-panel` independently
+   - Each sets `VITE_API_URL` to the Render API URL
 
-3. **DigitalOcean** (Full Stack)
-   - App Platform for frontend apps
-   - Droplet or App Platform for backend
+3. **Database → Supabase** (PostgreSQL)
 
-4. **Heroku** (Quick Deploy)
-   - `cd server && git push heroku main`
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for the full step-by-step guide.
 
 ## 📊 Database Schema
 
-MongoDB collections used:
-- `customers` - Customer profiles
-- `agents` - Technician/Agent profiles
-- `bookings` - Service bookings
-- `services` - Service catalog
-- `invoices` - Payment records
-- `notifications` - System notifications
-- `maintenanceschedules` - Automated reminders
-- `admins` - Admin user accounts
+Defined in `server/prisma/schema.prisma` (PostgreSQL via Prisma 6, **17 models**):
+`Customer`, `Agent`, `Admin`, `Service`, `Booking`, `Invoice`, `Payment`, `MaintenanceSchedule`, `SupportTicket`, `Notification`, `Session`, `RefreshToken`, `LoginHistory`, `DeviceTracking`, `AadhaarVerification`, `EmailVerification`, `PasswordResetToken`.
+
+- `server/lib/prisma.js` is the shared Prisma client; it aliases `id` → `_id` for frontend compatibility.
+- `server/lib/sanitize.js` strips secrets from responses (replacing the old Mongoose `toJSON`).
+- There are no `server/models/*.js` Mongoose files anymore.
 
 ## 🐛 Troubleshooting
 
@@ -427,17 +435,18 @@ lsof -ti:3000 | xargs kill -9
 # Kill process on port 4000
 lsof -ti:4000 | xargs kill -9
 
-# Kill process on port 6000
-lsof -ti:6000 | xargs kill -9
+# Kill process on port 6001
+lsof -ti:6001 | xargs kill -9
 
 # Kill process on port 5001
 lsof -ti:5001 | xargs kill -9
 ```
 
-### MongoDB Connection Issues
-- Check MongoDB is running: `mongod`
-- Verify `MONGODB_URI` in `.env`
-- Test connection: `mongoose.connect(uri)`
+### Database Connection Issues
+- Verify `DATABASE_URL` (pooled, port 6543, `?pgbouncer=true`) and `DIRECT_URL` (direct, port 5432) in `.env`
+- Re-sync the schema: `npx prisma db push`
+- Regenerate the client: `npx prisma generate`
+- Confirm your Supabase project is active and the IP is allowed
 
 ### Authentication Issues
 - Clear browser cookies/localStorage
@@ -449,7 +458,8 @@ lsof -ti:5001 | xargs kill -9
 - [React Documentation](https://react.dev)
 - [Vite Documentation](https://vitejs.dev)
 - [Express.js Guide](https://expressjs.com)
-- [MongoDB Manual](https://docs.mongodb.com/manual)
+- [Prisma Docs](https://www.prisma.io/docs)
+- [Supabase Docs](https://supabase.com/docs)
 - [Tailwind CSS](https://tailwindcss.com)
 
 ## 🤝 Support

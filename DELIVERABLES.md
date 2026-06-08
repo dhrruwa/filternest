@@ -7,6 +7,10 @@
 **Status:** Production Ready  
 **All Tests:** Passed ✅
 
+> Update: since this document was written, the backend was migrated from MongoDB/Mongoose to
+> **Supabase (PostgreSQL) via Prisma 6**, and the admin panel port changed from 6000 to **6001**.
+> Backend now deploys to **Render** and frontends to **Vercel**. See the root `CHANGELOG.md`.
+
 ---
 
 ## 📦 Deliverables Overview
@@ -119,7 +123,8 @@ agent-app/
 ```
 
 #### 3️⃣ Admin Panel (/admin-panel)
-**Port:** 6000 | **URL:** http://localhost:6000 | **Theme:** Dark Slate
+**Port:** 6001 | **URL:** http://localhost:6001 | **Theme:** Dark Slate
+> Uses port 6001, not 6000 — browsers block 6000 as `ERR_UNSAFE_PORT`.
 
 **Files Created/Modified:**
 ```
@@ -171,7 +176,8 @@ admin-panel/
 server/
 ├── server.js ✅ UPDATED (CORS for 3 apps)
 ├── package.json ✅ (unchanged - all deps present)
-├── models/ ✅ (unchanged - all models intact)
+├── prisma/schema.prisma ✅ (17 Prisma models — replaced the old Mongoose models/ folder)
+├── lib/ ✅ (prisma.js client w/ _id alias, sanitize.js)
 ├── controllers/ ✅ (unchanged - all controllers intact)
 ├── routes/ ✅ (unchanged - all routes intact)
 ├── middleware/ ✅ (unchanged - auth intact)
@@ -242,7 +248,7 @@ root/
 ### Applications
 - [x] Customer App runs on port 3000
 - [x] Agent App runs on port 4000
-- [x] Admin Panel runs on port 6000
+- [x] Admin Panel runs on port 6001
 - [x] Backend API runs on port 5001
 - [x] All apps have correct .env configuration
 - [x] All apps have package.json with correct scripts
@@ -291,7 +297,7 @@ root/
 ```
 Customer: http://localhost:3000
 Agent:    http://localhost:4000
-Admin:    http://localhost:6000
+Admin:    http://localhost:6001
 API:      http://localhost:5001
 ```
 
@@ -398,8 +404,9 @@ Admin:    admin@filternest.com / admin123
 
 ### Shared Backend
 - Centralized API
-- MongoDB database
+- Supabase (PostgreSQL) database via Prisma 6
 - JWT authentication
+- OTP via MSG91 SMS (primary) + email fallback
 - Email notifications
 - Automated scheduling
 - Security features

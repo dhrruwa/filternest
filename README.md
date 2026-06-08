@@ -2,6 +2,10 @@
 
 A comprehensive, production-ready full-stack enterprise platform for managing reverse osmosis servicing, smart maintenance schedules, multi-device sessions, and admin-controlled agent onboarding.
 
+> **Stack at a glance:** React 18 + Vite frontends (3 separate apps) · Node.js + Express backend · **Supabase (PostgreSQL) via Prisma 6** · JWT dual-token auth · Deployed on **Render (API)** + **Vercel (frontends)**.
+>
+> Looking for what recently changed and *why*? See **[CHANGELOG.md](CHANGELOG.md)** (MongoDB → Supabase migration and production hardening, with before → after rationale).
+
 ## 🌟 Core Architecture Modules
 
 ### 1. **Customer Identity & Care Portal**
@@ -12,7 +16,7 @@ A comprehensive, production-ready full-stack enterprise platform for managing re
 
 ### 2. **Admin-Controlled Specialist Onboarding**
 - **No Agent Self-Registration**: Public self-registration and OTP-creation systems are disabled.
-- **Dedicated Application Portal**: Vetted specialists apply through `/technician-application`, providing PAN, Aadhaar (spaced: `XXXX XXXX XXXX`), driving license, and permanent address along with a square-compressed progressive profile avatar uploader.
+- **Dedicated Application Portal**: Vetted specialists apply through `/technician-application`, providing PAN, Aadhaar (spaced: `XXXX XXXX XXXX`), driving license, and permanent address along with an **optional** square-compressed progressive profile avatar uploader.
 - **Vault-Secured Passcode**: Credentials (secure passcodes) are created solely by the Admin during vetting, cryptographically hashed using `bcryptjs` (10 rounds), and dispatched automatically to the technician via a beautifully styled welcome HTML email.
 
 ### 3. **Workforce & Fleet Command Center**
@@ -30,76 +34,107 @@ A comprehensive, production-ready full-stack enterprise platform for managing re
 - **Schedule Auto-Generation**: Triggers daily reminder evaluations.
 - **Pre-filter Calibration**: Creates service check-in schedules 3 months post-completion.
 - **RO Membrane Replacements**: Creates renewal schedules 6 months post-completion.
-- **Multi-Channel Notification Gateway**: Sends in-app messages and nodemailer-powered HTML emails.
+- **Multi-Channel Notification Gateway**: Sends in-app messages and nodemailer-powered HTML emails, plus **MSG91 SMS OTP** for login/verification.
 
 ---
 
 ## 🏗️ Project Structure
 
+This is a **multi-frontend monorepo**: three independent React apps share one Express + Prisma backend.
+
 ```
 filter-service/
 ├── server/                          # Node.js + Express backend
-│   ├── models/                      # MongoDB schemas (Customer, Agent, Session, RefreshToken, LoginHistory)
-│   ├── controllers/                 # Business logic (authController, adminController, bookingController)
-│   ├── routes/                      # API endpoints (authRoutes, adminRoutes, customerRoutes)
+│   ├── prisma/
+│   │   └── schema.prisma            # 17 PostgreSQL models (Customer, Agent, Admin,
+│   │                                #   Booking, Invoice, Session, RefreshToken, ...)
+│   ├── lib/
+│   │   ├── prisma.js                # Shared Prisma client (+ `_id` alias for frontend compat)
+│   │   └── sanitize.js              # Strips secrets from responses (replaces Mongoose toJSON)
+│   ├── controllers/                 # Business logic (auth, admin, booking, customer, agent)
+│   ├── routes/                      # API endpoints (authRoutes, adminRoutes, serviceRoutes, ...)
 │   ├── middleware/                  # Auth, validation, rate limits, XSS scrubs, CSRF checkers
 │   ├── services/                    # Email, MSG91 SMS, and Cron scheduler engines
-│   ├── utils/                       # Token helpers and User-Agent parser utilities
+│   ├── utils/                       # Token helpers, UA parser, and DB seeders
 │   └── server.js                    # Core app entry point
 │
-├── client/                          # React + Vite + Tailwind CSS frontend
-│   ├── src/
-│   │   ├── pages/                   # Home, Login, Register, AgentApply, AdminDashboard, Dashboards
-│   │   ├── components/              # Navbar, Footer, SecurityDashboard active session panel
-│   │   ├── services/                # Axios client with silent dual-token token rotation
-│   │   ├── context/                 # Zustand state storage (authStore)
-│   │   └── App.jsx                  # Main router definitions (/technician-application, /login)
-│   ├── vite.config.js
-│   ├── package.json
-│   └── index.html
+├── customer-app/                    # Consumer-facing React + Vite app   (dev port 3000)
+├── agent-app/                       # Field technician React + Vite app   (dev port 4000)
+├── admin-panel/                     # Admin control center React + Vite   (dev port 6001)
+│
+├── render.yaml                      # Render blueprint for the backend web service
+└── package.json                     # Root scripts to run/build all apps together
 ```
+
+Each frontend app contains `src/pages`, `src/components`, `src/services` (Axios client with silent
+dual-token rotation), `src/context` (Zustand `authStore`), and its own `vite.config.js`.
+
+> **Why three apps instead of one `client/`?** Strict role isolation — each app only accepts its own
+> role (`customer` / `agent` / `admin`) and deploys to its own domain, so a customer build never ships
+> admin code. See [MULTI_APP_README.md](MULTI_APP_README.md).
 
 ---
 
 ## 🚀 Getting Started
 
+### Prerequisites
+- Node.js **v18+**
+- A **Supabase** project (free tier is fine) for the PostgreSQL database
+
 ### Backend Setup
 
-1. **Install Server Dependencies**
+1. **Install Server Dependencies** (this also runs `prisma generate` via `postinstall`)
    ```bash
    cd server
    npm install
    ```
 
-2. **Configure Environment Variables (`server/.env`)**
+2. **Configure Environment Variables (`server/.env`)** — copy from `server/.env.example`
    ```env
    PORT=5001
    NODE_ENV=development
-   MONGODB_URI=mongodb://localhost:27017/water-filter-service
+
+   # Supabase (PostgreSQL via Prisma) — get from Supabase → Connect → ORMs → Prisma
+   DATABASE_URL="postgresql://...pooler.supabase.com:6543/postgres?pgbouncer=true"  # pooled (runtime)
+   DIRECT_URL="postgresql://...pooler.supabase.com:5432/postgres"                    # direct (migrations)
+
    JWT_SECRET=your_super_secret_jwt_key
+   JWT_EXPIRE=7d
+
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=465
    SMTP_USER=your_email@gmail.com
    SMTP_PASS=your_app_password
+
+   MSG91_AUTH_KEY=your_msg91_auth_key       # primary OTP channel
+   MSG91_TEMPLATE_ID=your_msg91_template_id
+
    FRONTEND_URL=http://localhost:3000
    ```
 
-3. **Boot Backend Server**
+3. **Apply the Prisma schema to your database**
    ```bash
-   npm run start
+   npx prisma db push      # or: npx prisma migrate dev
+   ```
+
+4. **Boot Backend Server**
+   ```bash
+   npm run dev             # nodemon (or `npm start` for production)
    ```
 
 ### Frontend Setup
 
-1. **Install Client Dependencies**
+Each app is set up the same way. Example for the customer app:
+
+1. **Install dependencies**
    ```bash
-   cd client
+   cd customer-app          # or agent-app / admin-panel
    npm install
    ```
 
-2. **Configure Environment Variables (`client/.env`)**
+2. **Configure Environment Variables (`customer-app/.env`)**
    ```env
-   VITE_API_URL=http://localhost:5001/api
+   VITE_API_URL=http://localhost:5001
    ```
 
 3. **Launch Vite Development Server**
@@ -107,21 +142,65 @@ filter-service/
    npm run dev
    ```
 
+### Run Everything At Once
+
+From the repo root:
+```bash
+npm run install-all      # installs root + server + all three frontends
+npm run dev              # concurrently starts server + customer + agent + admin
+```
+
+| App | Dev URL | Role |
+|-----|---------|------|
+| Customer | http://localhost:3000 | Customer/User |
+| Agent | http://localhost:4000 | Technician/Agent |
+| Admin | http://localhost:6001 | Administrator |
+| Backend API | http://localhost:5001 | N/A |
+
 ---
 
 ## 🔐 Advanced Security Features
 
-- **XSS & SQL Injection Mitigation**: Recursive scrubbers cleaning request attributes.
-- **CSRF Token Guards**: Header matchers guarding state-changing endpoint execution.
-- **Auth Rate-Limiting**: Strictly restricts authentication attempts to 10 requests per 15 minutes.
-- **Bcrypt Security**: Auto-hashes all onboarding passcodes and customer passwords before saving.
+- **XSS & Injection Mitigation**: Recursive scrubbers cleaning request attributes; Prisma's parameterized queries eliminate SQL injection surface.
+- **CSRF Token Guards**: Header/origin matchers guarding state-changing endpoints — allow-list plus any `*.vercel.app` origin so production frontends and preview deploys pass.
+- **Auth Rate-Limiting**: Strictly restricts authentication attempts; global limiter is environment-aware (relaxed in dev for SPA traffic).
+- **Bcrypt Security**: All onboarding passcodes and customer passwords are hashed (10 rounds) before saving.
 - **HTTP-Only Cookies**: Refresh tokens cannot be accessed by client-side browser scripts, stopping cookie theft.
+
+---
+
+## ☁️ Deployment
+
+The platform ships production-ready:
+
+- **Backend → Render** via the included [`render.yaml`](render.yaml) blueprint. `npm install` runs
+  `prisma generate` (postinstall); secrets (`DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, SMTP, MSG91)
+  are set in the Render dashboard. Health check: `/api/health`.
+- **Frontends → Vercel** — deploy `customer-app`, `agent-app`, and `admin-panel` as three separate
+  Vercel projects, each with `VITE_API_URL` pointing at the Render API URL.
+- **Database → Supabase** managed PostgreSQL.
+
+CORS and CSRF automatically accept any `*.vercel.app` origin, and avatar upload URLs are built from
+the request host (not a hardcoded localhost), so uploads resolve correctly behind Render's domain.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full walkthrough.
+
+---
+
+## 📚 Documentation
+
+- **[CHANGELOG.md](CHANGELOG.md)** — what changed recently and why (MongoDB → Supabase, production hardening).
+- [MULTI_APP_README.md](MULTI_APP_README.md) — multi-frontend architecture.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system design.
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) / [QUICKSTART.md](QUICKSTART.md) — getting running.
+- [DEPLOYMENT.md](DEPLOYMENT.md) — Render + Vercel deploy.
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — common issues.
+- [server/MIGRATION_CONVENTIONS.md](server/MIGRATION_CONVENTIONS.md) — Mongoose → Prisma data-modeling rules.
 
 ---
 
 ## 📞 Support & Inquiries
 
 For technical support or certified technician alignment:
-- Email: support@waterfilter.com
-- Helpline: 1-800-FILTER-1
-- Portal: [FilterNest Security Hub](http://localhost:3000)
+- Email: support@filternest.com
+- Portal: FilterNest Security Hub
